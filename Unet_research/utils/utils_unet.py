@@ -58,6 +58,8 @@ class UNet(nn.Module):
         # actual network
         self.db1_conv, self.db1_pool = self.get_down_block(init=True)
         self.db2_conv, self.db2_pool = self.get_down_block()
+        #self.db3_conv, self.db3_pool = self.get_down_block()
+        #self.db4_conv, self.db4_pool = self.get_down_block()
         
         self.conn_block = self.enc_dec_conn_block() # connection from encoder to decoder (dropout?)
         
@@ -292,6 +294,18 @@ class UNet(nn.Module):
         ic.enable()
         return x
 
-            
-            
+def unet_initialization(layer):
+    if type(layer) == nn.Conv2d or type(layer) == nn.ConvTranspose2d:
+        nn.init.normal_(layer.weight, mean = 0.0, std = (2**(1/3))/9)
+        
 
+
+# This works better with relu or leaky_relu activations (default is leaky_relu, but we use relu)
+def init_weight_k_norm(layer):
+    if type(layer) == nn.Conv2d or type(layer) == nn.ConvTranspose2d: 
+        nn.init.kaiming_normal_(layer.weight, nonlinearity='relu')
+
+
+def init_weight_k_uni(layer):
+    if type(layer) == nn.Conv2d or type(layer) == nn.ConvTranspose2d:
+        nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')

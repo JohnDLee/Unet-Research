@@ -8,6 +8,7 @@ import torch.optim as optim
 from utils.utils_dataset import *
 from utils.utils_unet import *
 from utils.utils_training import *
+from utils.utils_logger import logger
 
 
 
@@ -15,7 +16,7 @@ from utils.utils_training import *
 root = '.'
 
 # Retrieve data and include transformation operations
-print('Retrieving Data')
+logger.info('Retrieving Data')
 
 train_path_images = root + '/datasets/training/images'
 train_path_target = root + '/datasets/training/1st_manual'
@@ -49,7 +50,7 @@ test_dataset = CustomDataset(image_root=test_path,
 
 
 # Put data into dataloaders
-print('Loading Data')
+logger.info('Loading Data')
 
 # batch sizes
 train_batch_size = 1
@@ -68,12 +69,12 @@ test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = T
 
 # set up UNET and Optimizers
 
-print('Setting up UNet')
+logger.info('Setting up UNet')
 
 # check if GPU is available
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #device = 'cpu'
-print('Device:', device)
+logger.info('Device:', device)
 
 unet = UNet(init_channels = 3,
             filters = 64,
@@ -89,7 +90,7 @@ unet = UNet(init_channels = 3,
 unet.to(device)
 
 # !!!!! SET UP INITIAL WEIGHTS according to article
-
+unet.apply(unet_initialization)
 
 # optimizer parameters
 params = unet.parameters()
@@ -110,7 +111,7 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
 '''
 
 # training cycle
-print('Training')
+logger.info('Training')
 
 # validate once on random initialization
 val_loss = val_epoch(epoch=0,
@@ -119,10 +120,10 @@ val_loss = val_epoch(epoch=0,
                      dataloader=val_loader,
                      device=device,
                      use_mask=True)
-print(f'No Training Validation Loss - {val_loss}')
+logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 1000
+num_epochs = 30
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train
@@ -143,9 +144,19 @@ for epoch in range(1, num_epochs + 1):
                      device=device,
                      use_mask=True)  
   #report metrics
-  print(f'Train Loss: {train_loss}\nVal Loss: {val_loss}')
+  logger.info(f'Train Loss: {train_loss}\nVal Loss: {val_loss}')
   values['train_loss'].append(train_loss)
   values['val_loss'].append(val_loss)
+  
+  test_epoch(epoch=epoch,
+             network=unet,
+             dataloader=test_loader,
+             device = device,
+             num_cols=5,
+             save=True,
+             save_location='./models/'
+             )
+  
   
   # change lr
   #scheduler.step(val_loss)
