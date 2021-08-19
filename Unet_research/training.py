@@ -65,7 +65,7 @@ train_data, val_data = random_split(train_dataset, [train_size, val_size])
 # load into dataloaders
 train_loader = DataLoader(train_data, batch_size = train_batch_size, shuffle = False)
 val_loader = DataLoader(val_data, batch_size = val_batch_size, shuffle = False)
-test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = True )
+test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False )
 
 # set up UNET and Optimizers
 
@@ -123,7 +123,7 @@ val_loss = val_epoch(epoch=0,
 logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 30
+num_epochs = 1000
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train

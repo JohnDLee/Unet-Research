@@ -10,7 +10,7 @@ from utils.utils_dataset import split_target
 from utils.utils_logger import logger
 
 # training epoch
-def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask = True, save_location = None):
+def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask = True, save_location = None, save_interval = 5):
 
 
   logger.info(f'\n\nEpoch {epoch}:')
@@ -37,7 +37,8 @@ def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask
     loss = loss_fn(segmentation, gt)
 
     # multiply by size of tensor, divide by number of pixels that are 1 in the mask
-    loss *= (segmentation.numel() / mask.count_nonzero())
+    if use_mask:
+      loss *= (segmentation.numel() / mask.count_nonzero())
 
     #backprop
     optimizer.zero_grad()
@@ -50,7 +51,7 @@ def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask
     losses.append(loss.detach().cpu().numpy())
 
   # save model
-  if epoch % 5 == 0 and save_location:
+  if epoch % save_interval == 0 and save_location:
     if not os.path.isdir(os.path.join(save_location, f'epoch{epoch}')):
         os.mkdir(os.path.join(save_location, f'epoch{epoch}'))
     
@@ -62,13 +63,53 @@ def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask
 
 # validation epoch
 def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True):
-  
+
     logger.info('Validating')
     losses = []
     with torch.no_grad():
         for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
         
+            image_batch = image_batch.to(device)
+        
+            segmentation = network(image_batch)
             
+            # process gt
+            gt = split_target(gt)
+            gt = gt.to(device)
+
+            
+            # if using masks, only get region with mask
+            if use_mask:
+                segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
+
+            #get orig image and segmentation
+            loss = loss_fn(segmentation, gt)
+            
+            # multiply by total pixels and divide by number of 1 pixels in mask
+            if use_mask:
+              loss *= (segmentation.numel() / mask.count_nonzero())
+            
+            losses.append(loss.detach().cpu().numpy())
+            
+            torch.cuda.empty_cache()
+
+    return np.array(losses).mean()
+  
+# validation epoch
+def val_epoch_test(epoch, network, loss_fn, dataloader, device, use_mask = True):
+  
+    num_cols = 1
+    fig, ax = plt.subplots(1, 7, figsize = (5 * 7, 5), squeeze = True)
+
+
+    toPil = transforms.ToPILImage()
+    logger.info('Validating')
+    losses = []
+    with torch.no_grad():
+        for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
+        
+            if batch_idx == 1: # remove later
+              break
             
             image_batch = image_batch.to(device)
         
@@ -77,27 +118,53 @@ def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True):
             # process gt
             gt = split_target(gt)
             gt = gt.to(device)
+            #gt = torch.ones_like(gt)
+            #gt = torch.clamp(gt, min = 0.0, max = 1.0)
             
             # if using masks, only get region with mask
             if use_mask:
                 segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
             
+                
+            if batch_idx == 0:
+              ax[0].imshow(toPil(image_batch.cpu()[0]))
+              ax[1].imshow(toPil(segmentation.cpu()[0][0]), cmap = 'gray')
+              ax[2].imshow(toPil(segmentation.cpu()[0][1]), cmap = 'gray')
+              ax[3].imshow(toPil(gt.cpu()[0][0]), cmap = 'gray')
+              ax[4].imshow(toPil(gt.cpu()[0][1]), cmap = 'gray')
+              ax[5].imshow(toPil(mask.cpu()[0][0]), cmap = 'gray')
+              ax[6].imshow(toPil(mask.cpu()[0][1]), cmap = 'gray')
+
+              fig.suptitle(f'Image {batch_idx + 1}')
+            
+            print("Segmentation: ", segmentation)
+            print("Seg Max: ", segmentation.max())
+            print("Seg Min: ", segmentation.min())
+            print("Number of non 0's:", segmentation.count_nonzero())
+            print("Number of 0's: ", segmentation.numel()-segmentation.count_nonzero())
+            
+            print("GT: ", gt)
+            print("GT Max: ", gt.max())
+            print("GT Min: ", gt.min())
+            print("Number of non 0's:", gt.count_nonzero())
+            print("Number of 0's: ", gt.numel()-gt.count_nonzero())
             #get orig image and segmentation
             loss = loss_fn(segmentation, gt)
             
             # multiply by total pixels and divide by number of 1 pixels in mask
-            loss *= (segmentation.numel() / mask.count_nonzero())
+            if use_mask:
+              loss *= (segmentation.numel() / mask.count_nonzero())
             
             losses.append(loss.detach().cpu().numpy())
             
             torch.cuda.empty_cache()
             
-            
-    return np.array(losses).mean()
+            plt.show()
+    return losses[0]#np.array(losses).mean()
 
 
 # plotting test epoch
-def test_epoch(epoch, network, dataloader, device, num_cols = 5, save = True, save_location = None):
+def test_epoch(epoch, network, dataloader, device, num_cols = 5, save = True, save_location = None, save_interval = 5):
   
   # alternatively
 
@@ -125,7 +192,7 @@ def test_epoch(epoch, network, dataloader, device, num_cols = 5, save = True, sa
   
   fig.suptitle(f'Test Set - Epoch {epoch}')
   if save:
-    if epoch % 5 == 0:
+    if epoch % save_interval == 0:
       fig.savefig(os.path.join(save_location , f'epoch{epoch}/test.png'))
   else:
     plt.show()

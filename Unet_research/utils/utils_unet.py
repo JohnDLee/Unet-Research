@@ -80,10 +80,12 @@ class UNet(nn.Module):
         
         self._filters *= 2
         
-        layers.append(nn.ReLU())
-        
         if self._use_batchnorm:
             layers.append(nn.BatchNorm2d(self._filters))
+            
+        layers.append(nn.ReLU())
+        
+        
         
         # additional convolutional layers in middle of upblock
         for i in range(self._conv_layers_per_block - 1):
@@ -92,11 +94,13 @@ class UNet(nn.Module):
                                   kernel_size=self._kernel_size,
                                   stride=self._stride,
                                   padding=self._padding))
-
-            layers.append(nn.ReLU())
-
+            
             if self._use_batchnorm:
                 layers.append(nn.BatchNorm2d(self._filters))
+                
+            layers.append(nn.ReLU())
+
+            
         
         return nn.Sequential(*layers)
         
@@ -121,10 +125,10 @@ class UNet(nn.Module):
                                   padding=self._padding))
             self._filters = self._filters*2 # change the filter amount
 
-        layers.append(nn.ReLU())
-
         if self._use_batchnorm:
             layers.append(nn.BatchNorm2d(self._filters))
+            
+        layers.append(nn.ReLU())
 
 
         # additional convolutional layers to the down block
@@ -135,11 +139,12 @@ class UNet(nn.Module):
                                   stride=self._stride,
                                   padding=self._padding))
 
-            layers.append(nn.ReLU())
-        
             if self._use_batchnorm:
                 layers.append(nn.BatchNorm2d(self._filters))
-
+                
+            layers.append(nn.ReLU())
+        
+        
         pooling = []
         # pooling step
         if self._pool_mode == 'max':
@@ -156,10 +161,13 @@ class UNet(nn.Module):
                                     out_channels=self._filters,
                                   kernel_size=self._pool_kernel,
                                   stride=self._pool_stride))
-            pooling.append(nn.ReLU()) # uses relu layers if down sample is a convolution
+            
 
         if self._use_batchnorm:
             pooling.append(nn.BatchNorm2d(self._filters))
+            
+        if self._pool_mode == 'conv': # use relu activation before
+            pooling.append(nn.ReLU()) # uses relu layers if down sample is a convolution
             
         return nn.Sequential(*layers), nn.Sequential(*pooling)
 
@@ -187,10 +195,13 @@ class UNet(nn.Module):
                                            output_padding = out_pad))
         
         self._filters //= 2
-        upsample.append(nn.ReLU())
         
         if self._use_batchnorm:
             upsample.append(nn.BatchNorm2d(self._filters))
+            
+        upsample.append(nn.ReLU())
+        
+        
         
         layers = []
         # First convolution after skip connection
@@ -209,11 +220,10 @@ class UNet(nn.Module):
                                   stride=self._stride,
                                   padding=self._padding))
         
-        layers.append(nn.ReLU())
-        
         if self._use_batchnorm:
             layers.append(nn.BatchNorm2d(self._filters))
-        
+            
+        layers.append(nn.ReLU())
         
         # additional convolutional layers in middle of upblock
         for i in range(self._conv_layers_per_block - 1):
@@ -223,12 +233,13 @@ class UNet(nn.Module):
                                   stride=self._stride,
                                   padding=self._padding))
 
-            layers.append(nn.ReLU())
-
             if self._use_batchnorm:
                 layers.append(nn.BatchNorm2d(self._filters))
-        
+                
+            layers.append(nn.ReLU())
+            
         return nn.Sequential(*upsample), nn.Sequential(*layers)
+        
         
     def skip_connection(self, x, conn):
         ''' outputs x depending on the connection method'''
@@ -242,6 +253,7 @@ class UNet(nn.Module):
         elif self._connection == 'none':
             return x
 
+
     def end_conv(self):
         
         layers = []
@@ -252,8 +264,11 @@ class UNet(nn.Module):
                                   stride=self._stride,
                                   padding=self._padding))
 
-        layers.append(nn.Softmax(dim = 2))
-        
+        if self._use_batchnorm:
+            layers.append(nn.BatchNorm2d(self._output_channels))
+            
+        #layers.append(nn.Softmax(dim = 2))
+        layers.append(nn.Sigmoid())
         return nn.Sequential(*layers)
     
     def forward(self, x):
