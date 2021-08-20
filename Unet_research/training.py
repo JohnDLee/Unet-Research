@@ -74,7 +74,7 @@ logger.info('Setting up UNet')
 # check if GPU is available
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #device = 'cpu'
-logger.info('Device:', device)
+logger.info(f'Device:  {device}')
 
 unet = UNet(init_channels = 3,
             filters = 64,
@@ -102,10 +102,12 @@ optimizer = optim.SGD(params, lr = lr, momentum = momentum )
 loss_fn = nn.BCELoss()
 
 # LR scheduler (for later )
+
 '''
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                  mode='min',
                                                  factor=.1,
+                                                 threshold=.005,
                                                  patience=5,
                                                  verbose=True)
 '''
@@ -123,7 +125,7 @@ val_loss = val_epoch(epoch=0,
 logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 1000
+num_epochs = 20
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train
@@ -135,7 +137,8 @@ for epoch in range(1, num_epochs + 1):
                            dataloader=train_loader,
                            device=device,
                            use_mask=True,
-                           save_location='./models/')
+                           save_location='./models/',
+                           save_interval=10)
   #validate
   val_loss = val_epoch(epoch=0,
                      network=unet,
@@ -144,7 +147,8 @@ for epoch in range(1, num_epochs + 1):
                      device=device,
                      use_mask=True)  
   #report metrics
-  logger.info(f'Train Loss: {train_loss}\nVal Loss: {val_loss}')
+  logger.info(f'Train Loss: {train_loss}')
+  logger.info(f'Val Loss: {val_loss}')
   values['train_loss'].append(train_loss)
   values['val_loss'].append(val_loss)
   
@@ -154,7 +158,8 @@ for epoch in range(1, num_epochs + 1):
              device = device,
              num_cols=5,
              save=True,
-             save_location='./models/'
+             save_location='./models/',
+             save_interval=10
              )
   
   

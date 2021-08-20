@@ -194,6 +194,7 @@ def test_epoch(epoch, network, dataloader, device, num_cols = 5, save = True, sa
   if save:
     if epoch % save_interval == 0:
       fig.savefig(os.path.join(save_location , f'epoch{epoch}/test.png'))
+      fig.close()
   else:
     plt.show()
 

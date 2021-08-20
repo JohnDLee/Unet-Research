@@ -1,3 +1,6 @@
+remake:
+	mkdir models
+	mkdir logs
 
 clean:
 	rm -r models
