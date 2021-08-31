@@ -125,7 +125,7 @@ val_loss = val_epoch(epoch=0,
 logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 20
+num_epochs = 500
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train
@@ -138,7 +138,7 @@ for epoch in range(1, num_epochs + 1):
                            device=device,
                            use_mask=True,
                            save_location='./models/',
-                           save_interval=10)
+                           save_interval=num_epochs) # if num_epochs, it saves the final epoch of data
   #validate
   val_loss = val_epoch(epoch=0,
                      network=unet,
@@ -159,7 +159,7 @@ for epoch in range(1, num_epochs + 1):
              num_cols=5,
              save=True,
              save_location='./models/',
-             save_interval=10
+             save_interval=num_epochs
              )
   
   
