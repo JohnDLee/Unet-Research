@@ -2,9 +2,14 @@
 /Unet_research/metrics
 /Unet_research/models
 /Unet_research/logs
-Unet_research/makefile
-Unet_research/Debug.ipynb
-Unet_research/Test - updated.ipynb
+/Unet_research/makefile
+/Unet_research/Debug.ipynb
+/Unet_research/Test - updated.ipynb
 *png
 Comparing Translations
 *zip
+*.DS_Store
+.gitignore
+.gitattributes
+.vscode
+*.ipynb_checkpoints
