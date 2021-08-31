@@ -390,7 +390,7 @@ class UNet2(nn.Module):
         
         self._use_dropblock = use_dropblock
         if use_dropblock:   
-            self._dropblock = DropBlock2D(block_size = block_size, drop_prob = drop_prob )
+            self._dropblock = DropBlock2D(block_size = block_size, drop_prob = drop_prob)
         
         
         if pool_mode not in ['max', 'avg', 'conv']: #pooling mode
