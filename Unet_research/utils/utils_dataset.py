@@ -9,6 +9,8 @@ from typing import Any, Callable, cast, Dict, List, Optional, Tuple
 
 import torchvision.transforms.functional as TF
 
+from utils.utils_general import split_target
+
 
 class CustomDataset(torch.utils.data.Dataset):
 
@@ -105,6 +107,53 @@ class RandomOperations:
         tup = self._transforms[index](tup)
     
     return tup
+  
+class AutoPad(nn.Module):
+  
+  def __init__(self, original_size, model_depth, fill = 0, padding_mode = "constant"):
+    super().__init__()
+    
+    right_pad = 0
+    while ((original_size[1] + right_pad) % (2**model_depth) != 0):
+      right_pad += 1
+    
+    bot_pad = 0
+    while ((original_size[0] + bot_pad) % (2**model_depth) != 0):
+      bot_pad += 1
+    
+    self._pad_sequence = (0, 0, right_pad, bot_pad)
+    self._fill = fill
+    self._padding_mode = padding_mode
+    
+  def forward(self, tup):
+    ''' accepts a 2D array-like containing PIL or Tensor
+    return a Tuple of padded images, automatically padded to a size divisible by 2^model_depth
+    '''
+    
+    new_tup = []
+    for i in range(len(tup)):
+      new_tup.append(TF.pad(tup[i], self._pad_sequence, self._fill, self._padding_mode ))
+    return tuple(new_tup)
+  
+
+class Pad(nn.Module):
+  
+  def __init__(self, pad_sequence = (0,0,0,0), fill = 0, padding_mode = "constant"):
+    super().__init__()
+    self._pad_sequence = pad_sequence
+    self._fill = fill
+    self._padding_mode = padding_mode
+    
+  def forward(self, tup):
+    ''' accepts a 2D array-like containing PIL or Tensor
+    return a Tuple of padded images, padded left, top, right, bottom respectively accourding to sequence.
+    '''
+    
+    new_tup = []
+    for i in range(len(tup)):
+      new_tup.append(TF.pad(tup[i], self._pad_sequence, self._fill, self._padding_mode ))
+    return tuple(new_tup)
+
 
 #hflip
 class RandomHorizontalFlip(nn.Module):
@@ -213,6 +262,3 @@ class ToTensor:
         new_tup.append(tup[i])
     return tuple(new_tup)
 
-
-def split_target(target):
-  return torch.cat([target, 1-target], dim = 1)

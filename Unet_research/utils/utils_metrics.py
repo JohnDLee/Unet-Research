@@ -15,17 +15,23 @@ from utils.utils_general import TensortoPIL, get_masked, split_target
 # plotting test epoch
 def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, val_losses, confusion_threshold, device, use_mask = True, save = True, save_path = None):
     if save:
-        os.mkdir(save_path)
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
         # save parameters
-        os.mkdir(os.path.join(save_path , 'losses'))
-        os.mkdir(os.path.join(save_path , 'examples'))
-        os.mkdir(os.path.join(save_path, 'model'))
-        os.mkdir(os.path.join(save_path, 'eval'))
+        if not os.path.exists(os.path.join(save_path , 'losses')):
+            os.mkdir(os.path.join(save_path , 'losses'))
+        if not os.path.exists(os.path.join(save_path , 'examples')):
+            os.mkdir(os.path.join(save_path , 'examples'))
+        if not os.path.exists(os.path.join(save_path , 'model')):
+            os.mkdir(os.path.join(save_path, 'model'))
+        if not os.path.exists(os.path.join(save_path , 'eval')):
+            os.mkdir(os.path.join(save_path, 'eval'))
     save_loss_params = {'save': save, 'save_path': os.path.join(save_path, 'losses')}
     save_example_params = {'save': save, 'save_path': os.path.join(save_path, 'examples')}
     save_model_params = {'save': save, 'save_path': os.path.join(save_path, 'model')}
     save_eval_params = {'save': save, 'save_path': os.path.join(save_path, 'eval',)}
 
+    network.eval()
     with torch.no_grad():
         
         test_id, (test_image_batch, _, test_mask) = next(enumerate(test_dataloader))
@@ -34,22 +40,26 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
         # test run
         test_image_batch = test_image_batch.to(device)
         test_segmentation = network(test_image_batch)
-        test_segmentation = test_segmentation.cpu() # put it back onto cpu
         
         
 
         # val run
         val_image_batch = val_image_batch.to(device)
         val_segmentation = network(val_image_batch)
-        val_segmentation = val_segmentation.cpu()
         
         val_gt = split_target(val_gt)
+        val_gt = val_gt.to(device)
+        
         
         # if using masks, only get region with mask
         if use_mask:
             val_seg_masked, val_gt_masked, val_mask = get_masked(val_segmentation, val_gt, val_mask, device)
         
-
+    # move back onto cpu
+    val_seg_masked = val_seg_masked.cpu()
+    val_gt_masked = val_gt_masked.cpu()
+    val_mask = val_mask.cpu()
+    test_segmentation = test_segmentation.cpu()
     
     # save model
     save_model(network=network,
@@ -154,10 +164,36 @@ def save_loss_profile(train_losses, val_losses, save = True, save_path = '.' ):
 def save_contour_map(segmentation_class, gt_class, class_id, save = True, save_path = '.'):
     ''' creates and saves a contour map between a segmentation class and gt class to observe class mismatches
     segmentation_class and gt_class are a single corresponding class between the segmentation and gt'''
+    '''
+    fig, ax = plt.subplots(1, 2)
+    a = ax[0].imshow(segmentation_class, cmap = "gray")
+    ax[0].set_title("Segmentaiton")
+    b = ax[1].imshow(gt_class, cmap = "gray")
+    ax[1].set_title("GT")
+    fig.colorbar(a, ax = ax[0])
+    fig.colorbar(b, ax = ax[1])
+    fig.show()
     
-    
+    fig , ax = plt.subplots(1, 3 )
+    '''
     # find distance between segmentation and gt
+    segmentation_class = torch.round(segmentation_class) # round to either 0 or 1 for 50% threshold
+    
+
     diff = 2 * (segmentation_class - gt_class) / (torch.abs(segmentation_class) + torch.abs(gt_class))
+    '''
+    diff2 = segmentation_class - gt_class
+    a = ax[0].imshow(diff2, cmap = cm.seismic, vmin = -1, vmax = 1)
+    b = ax[1].imshow(segmentation_class, cmap = "gray")
+    ax[1].set_title("Segmentaiton")
+    c = ax[2].imshow(gt_class, cmap = "gray")
+    ax[2].set_title("GT")
+    fig.colorbar(b, ax = ax[1])
+    fig.colorbar(c, ax = ax[2])
+    fig.colorbar(a, ax = ax[0])
+    ax[0].set_title("Diff")
+    fig.show()
+    '''
     
     fig, ax = plt.subplots(1, 1, figsize = (10, 10))
     div_map = ax.imshow(diff, cmap = cm.seismic)
@@ -216,7 +252,8 @@ def save_confusion_matrix(segmentation_class, gt_class, mask, class_id, threshol
     
     # for saving
     if save:
-        os.mkdir(os.path.join(save_path, f'conf_matrix_{class_id}'))
+        if not os.path.exists(os.path.join(save_path, f'conf_matrix_{class_id}')):
+            os.mkdir(os.path.join(save_path, f'conf_matrix_{class_id}'))
         fig.savefig(os.path.join(save_path, f'conf_matrix_{class_id}/conf_matrix.png'))
         with open(os.path.join(save_path, f'conf_matrix_{class_id}/conf_maxtrix_stats.txt'), 'w') as f:
             f.write(f'Accuracy [(TP+TN) / Total]  = {(true_pos + true_neg) / mask.count_nonzero()} \n')

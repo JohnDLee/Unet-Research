@@ -8,7 +8,6 @@ import torch
 import os
 from utils.utils_general import split_target, get_masked, TensortoPIL
 
-from utils.utils_logger import logger
 
 
 

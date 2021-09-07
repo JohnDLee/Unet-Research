@@ -7,15 +7,16 @@ import matplotlib.pyplot as plt
 import torch
 import os
 
-from utils.utils_logger import logger
 from utils.utils_general import split_target, get_masked, TensortoPIL
 from utils.utils_metrics import *
 
 
 # training epoch
-def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask = True):
-  
-    logger.info(f'\n\nEpoch {epoch}:')
+def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device,  logger,use_mask = True,):
+    
+    # turn training mode on
+    network.train()
+    logger.info(f'\n\nTraining Epoch {epoch}:')
     losses = []
     for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
       
@@ -46,17 +47,23 @@ def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device, use_mask
 
         torch.cuda.empty_cache()
         # get info
-        logger.info(f'\tBatch {batch_idx + 1}/{len(dataloader.dataset)}: loss - {loss}')
-        losses.append(loss.detach().cpu().numpy())
+        logger.info(f'\tBatch {batch_idx + 1}/{len(dataloader)}: loss - {loss}')
+        losses.append(loss.item())
+        
+        
+        del segmentation, gt, mask, loss
+        torch.cuda.empty_cache() # clear GPU
 
-    torch.cuda.empty_cache() # clear GPU
+    
   
     return np.array(losses).mean()
 
 
 # validation epoch
-def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True):
+def val_epoch(epoch, network, loss_fn, dataloader, device, logger, use_mask = True):
 
+    # set to evaluation mode
+    network.eval()
     logger.info('Validating')
     losses = []
     with torch.no_grad():
@@ -82,9 +89,10 @@ def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True):
             if use_mask:
               loss *= (segmentation.numel() / mask.count_nonzero())
             
-            losses.append(loss.detach().cpu().numpy()) # save losses
+            losses.append(loss.item()) # save losses
           
-        torch.cuda.empty_cache() # clear GPU
+            del segmentation, gt, mask, loss
+            torch.cuda.empty_cache() # clear GPU
 
     return np.array(losses).mean()
   

@@ -5,7 +5,7 @@ from dropblock import DropBlock2D
 from icecream import ic
 
 
-class UNet(nn.Module):
+class UNetold(nn.Module):
 # can convert this to the architecture and move the actual model creation elsewhere
 
     def __init__(self, init_channels, filters, output_channels, pool_mode = 'max', up_mode = 'upsample', connection = 'cat',  same_padding = True, use_batchnorm = True,  conv_layers_per_block = 2):
@@ -21,7 +21,7 @@ class UNet(nn.Module):
           use_batchnorm (bool): include batchnorm layers
           conv_layers_per_block (int>1): number of layers per block"""
 
-        super(UNet, self).__init__()
+        super(UNetold, self).__init__()
 
         # check for appropriate inputs
         if pool_mode not in ['max', 'avg', 'conv']:
@@ -276,7 +276,7 @@ class UNet(nn.Module):
     
     def forward(self, x):
         
-        print_mode = True
+        print_mode = False
         # testing - remove later
         if not print_mode:
             ic.disable()
@@ -339,7 +339,7 @@ class UNet(nn.Module):
         return x
     
 
-class UNet2(nn.Module):
+class UNet(nn.Module):
 # can convert this to the architecture and move the actual model creation elsewhere
 
     def __init__(self, init_channels, filters, output_channels, model_depth = 4, pool_mode = 'max', up_mode = 'upsample', connection = 'cat',  same_padding = True, use_batchnorm = True, use_dropblock = True, block_size = 7, drop_prob = .1, conv_layers_per_block = 2, activation_fcn = 'relu', neg_slope = .01):
@@ -357,7 +357,7 @@ class UNet2(nn.Module):
           activation_fcn (str): activation function of relu or leaky relu
           neg_slope (float): negative slope of leaky relu (does not affect relu)"""
 
-        super(UNet2, self).__init__()
+        super(UNet, self).__init__()
 
         # check for appropriate inputs
         
@@ -668,25 +668,28 @@ class UNet2(nn.Module):
         # encoding
         for step in range(self._model_depth):
             x = self.down_blocks[step][0](x) # convolution
-            print(f'Step {step} conv: ', x.size())
+            #print(f'Step {step} conv: ', x.size())
             skip_conns.append(x.clone()) # appends a skip connection
             x = self.down_blocks[step][1](x) # pool
-            print(f'Step {step} pool: ', x.size())
+            #print(f'Step {step} pool: ', x.size())
         
         # connection
         x = self.conn_block(x)
-        print(f'Step conn: ', x.size())
+        #print(f'Step conn: ', x.size())
          
         skip_conns = skip_conns[::-1] # reverse list
         for step in range(self._model_depth):
             x = self.up_blocks[step][0](x) # upsample
-            print(f'Step {step} upsample: ', x.size())
+            #print(f'Step {step} upsample: ', x.size())
             x = self.skip_connection(x, skip_conns[step]) # performs skip connection
             x = self.up_blocks[step][1](x) # conv
-            print(f'Step {step} conv: ', x.size())
+            #print(f'Step {step} conv: ', x.size())
             
         x = self.output_conv(x)
-        print(f'Step final: ', x.size())
+        #print(f'Step final: ', x.size())
+
+        # free up memory
+        del skip_conns
         
         return x
 
