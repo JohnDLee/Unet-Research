@@ -5,16 +5,20 @@ from torch import nn
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split, RandomSampler
 import torch.optim as optim
+import logging
 
 from utils.utils_dataset import *
 from utils.utils_unet import *
 from utils.utils_training import *
 from utils.utils_metrics import *
 
-# set up a logger
-import logging
+
+# set up save file
 if not os.path.exists("metrics/test"):
   os.mkdir("metrics/test")
+  
+  
+# set up a logger
 logging.basicConfig(filename="metrics/test/console.log", 
 					format= '%(asctime)s:%(filename)s:%(lineno)d:%(levelname)s:%(name)s:%(message)s', ) 
 logger = logging.getLogger()
@@ -76,12 +80,13 @@ train_size = int(len(train_dataset) * .7)
 val_size = len(train_dataset) - train_size
 train_data, val_data = random_split(train_dataset, [train_size, val_size])
 
+
 # load into dataloaders
 #rand_sampler_train = RandomSampler(train_data, num_samples=train_samples, replacement=True) # sample with replacement
 train_loader = DataLoader(train_data, batch_size = train_batch_size,)# sampler = rand_sampler_train)
 
 val_loader = DataLoader(val_data, batch_size = val_batch_size, shuffle = False)
-test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = True )
+test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False )
 
 
 # set up UNET and Optimizers
@@ -117,14 +122,15 @@ unet = UNet(init_channels = 3,
             block_size = 7,
             drop_prob = .1,
             conv_layers_per_block = 2,
-            activation_fcn = 'relu'
+            activation_fcn = 'leaky_relu',
+            neg_slope = 0.01,
             )
 
 
 unet.to(device)
 
 # !!!!! SET UP INITIAL WEIGHTS according to article
-#unet.apply(unet_initialization)
+unet.apply(unet_initialization)
 
 # optimizer parameters
 params = unet.parameters()
@@ -160,7 +166,7 @@ val_loss = val_epoch(epoch=0,
 logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 50
+num_epochs = 1
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train
@@ -192,10 +198,10 @@ final_test_metrics(network=unet,
                    test_dataloader=test_loader,
                    train_losses=values['train_loss'],
                    val_losses=values['val_loss'],
-                   confusion_threshold=.5,
                    device=device,
                    use_mask = True,
-                   save = True,
+                   num_test_samples = 5, # conserve space
+                   save_model = False,
                    save_path = "./metrics/test")
   
   

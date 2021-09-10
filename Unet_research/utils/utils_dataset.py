@@ -38,6 +38,7 @@ class CustomDataset(torch.utils.data.Dataset):
     # transforms
     self._transform = transform
 
+    self._data_type = 'train'
     
   def __getitem__(self, idx):
     # get image path
@@ -72,14 +73,13 @@ class CustomDataset(torch.utils.data.Dataset):
       
     sample = (image, label, mask)
 
-    if self._transform:
+    if self._transform and self._data_type != 'validation':
       sample = self._transform(sample)
 
     return sample
   
   def __len__(self):
     return len(self._im_list)
-
 
 # Transformation Functions 
 # (changed to accept a tuple of (image, target) to apply identical transformations to both )
