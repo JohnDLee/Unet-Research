@@ -39,7 +39,7 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
 
     # save model
     if save_model:
-        save_model(network=network,
+        save_network(network=network,
                 save_path=model_folder)
         
     # save losses
@@ -148,7 +148,7 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
 
 
 
-def save_model(network, save_path = '.'):
+def save_network(network, save_path = '.'):
     torch.save(network.state_dict(), os.path.join(save_path, f'model.pth'))
 
 def save_losses_as_text(train_losses, val_losses, save_path = '.'):

@@ -1,8 +1,5 @@
-/Unet_research/models
-/Unet_research/trains
-/Unet_research/makefile
-/Unet_research/logs
-/Unet_research/metrics
+**/makefile
+**/metrics/**
 /Unet_research/Test.ipynb
 /Unet_research/Debug.ipynb
 *ipynb_checkpoints

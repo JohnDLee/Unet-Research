@@ -1,6 +1,7 @@
 import torch
 from torchvision import transforms
 
+
 def split_target(target):
     ''' splits our gt into [class0, class1] by inversing'''
     return torch.cat([target, 1-target], dim = 1)
@@ -18,6 +19,6 @@ def TensortoPIL(tensor):
     topil = transforms.ToPILImage()
     return topil(tensor)
     
-    
+
     
     

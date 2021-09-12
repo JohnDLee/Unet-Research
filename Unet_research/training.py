@@ -6,25 +6,35 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, random_split, RandomSampler
 import torch.optim as optim
 import logging
+import argparse
+import sys
 
 from utils.utils_dataset import *
 from utils.utils_unet import *
 from utils.utils_training import *
 from utils.utils_metrics import *
+from utils.utils_file_handler import *
 
 
-# set up save file
-if not os.path.exists("metrics/test"):
-  os.mkdir("metrics/test")
-  
-  
-# set up a logger
-logging.basicConfig(filename="metrics/test/console.log", 
-					format= '%(asctime)s:%(filename)s:%(lineno)d:%(levelname)s:%(name)s:%(message)s', ) 
-logger = logging.getLogger()
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.INFO)
+# read command line
+parser = setup_argparser()
+save_path = parser.parse_args().filepath # save destination for metrics
+if not os.path.exists(save_path):
+  print("Save path does not exist")
+  sys.exit(1)
+ini_file = parser.parse_args().file # ini_file_name
+ini_path = os.path.join(save_path, ini_file) # ini_path
 
+#parse the ini_file
+general_params = read_config(ini_path, 'general')
+hyper_params = read_config(ini_path, 'unet_params')
+scheduler_params = read_config(ini_path, 'lr_scheduler')
+optim_params = read_config(ini_path, 'optim_params')
+metrics_param = read_config(ini_path, 'metrics')
+
+
+# create a logger
+logger = setup_logger(save_path)
 
 root = '.'
 
@@ -46,13 +56,13 @@ train_transform = transforms.Compose([RandomOperations([RandomHorizontalFlip(p =
                                       RandomRotate(degrees = 180),
                                       ToTensor()])
 '''
-train_transform = transforms.Compose([AutoPad(original_size = (584, 565), model_depth = 4, fill = 0, padding_mode = "constant"),
+train_transform = transforms.Compose([AutoPad(original_size = (584, 565), model_depth = hyper_params['model_depth'], fill = 0, padding_mode = "constant"),
                                      RandomHorizontalFlip(p = .5),
                                      RandomVerticalFlip(p = .5),
                                      RandomRotate(degrees = 180),
                                      ToTensor()])
 
-test_transform = transforms.Compose([AutoPad(original_size = (584, 565), model_depth = 4, fill = 0, padding_mode = "constant"),
+test_transform = transforms.Compose([AutoPad(original_size = (584, 565), model_depth = hyper_params['model_depth'], fill = 0, padding_mode = "constant"),
                                      ToTensor()])
 
 # retrieve dataset
@@ -68,12 +78,12 @@ test_dataset = CustomDataset(image_root=test_path,
 logger.info('Loading Data')
 
 # batch sizes
-train_batches_per_epoch = 14
-train_batch_size = 1
+train_batches_per_epoch = 10
+train_batch_size = general_params['train_batch_size']
 train_samples = train_batches_per_epoch * train_batch_size
 
-val_batch_size = 1 # validate in one batch
-test_batch_size = 1 # test one by one
+val_batch_size = general_params['val_batch_size'] # validate in one batch
+test_batch_size = general_params['test_batch_size']# test one by one
 
 # split into train and val
 train_size = int(len(train_dataset) * .7)
@@ -82,8 +92,8 @@ train_data, val_data = random_split(train_dataset, [train_size, val_size])
 
 
 # load into dataloaders
-#rand_sampler_train = RandomSampler(train_data, num_samples=train_samples, replacement=True) # sample with replacement
-train_loader = DataLoader(train_data, batch_size = train_batch_size,)# sampler = rand_sampler_train)
+rand_sampler_train = RandomSampler(train_data, num_samples=train_samples, replacement=True) # sample with replacement
+train_loader = DataLoader(train_data, batch_size = train_batch_size, sampler = rand_sampler_train)
 
 val_loader = DataLoader(val_data, batch_size = val_batch_size, shuffle = False)
 test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False )
@@ -97,60 +107,27 @@ logger.info('Setting up UNet')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #device = 'cpu'
 logger.info(f'Device:  {device}')
-'''
-unet = UNetold(init_channels = 3,
-            filters = 64,
-            output_channels = 2,
-            pool_mode = 'max',
-            up_mode = 'upconv', 
-            connection = 'cat',
-            same_padding = True,
-            use_batchnorm = True,
-            conv_layers_per_block = 2
-            )
-'''
-unet = UNet(init_channels = 3,
-            filters = 64,
-            output_channels = 2,
-            model_depth = 4,
-            pool_mode = 'max',
-            up_mode = 'upconv', 
-            connection = 'cat',
-            same_padding = True,
-            use_batchnorm = True,
-            use_dropblock = False,
-            block_size = 7,
-            drop_prob = .1,
-            conv_layers_per_block = 2,
-            activation_fcn = 'leaky_relu',
-            neg_slope = 0.01,
-            )
 
-
+# set up unet
+unet = UNet(**hyper_params)
 unet.to(device)
 
 # !!!!! SET UP INITIAL WEIGHTS according to article
-unet.apply(unet_initialization)
+init_mode(unet, general_params['init'])
 
 # optimizer parameters
 params = unet.parameters()
-lr = .001
-momentum = .99 # according to article
-optimizer = optim.SGD(params, lr = lr, momentum = momentum )
+
+optimizer = set_optimizer(general_params['optimizer'], params, optim_params)
 
 # loss function
 loss_fn = nn.BCELoss()
 
 # LR scheduler (for later )
-
-'''
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
-                                                 mode='min',
-                                                 factor=.1,
-                                                 threshold=.005,
-                                                 patience=5,
-                                                 verbose=True)
-'''
+                                                  **scheduler_params,
+                                                  verbose=True)
+
 
 # training cycle
 logger.info('Start Training Cycle')
@@ -166,7 +143,7 @@ val_loss = val_epoch(epoch=0,
 logger.info(f'No Training Validation Loss - {val_loss}')
 
 
-num_epochs = 1
+num_epochs = general_params['epochs']
 values = {'train_loss': [], 'val_loss': []}
 for epoch in range(1, num_epochs + 1):
   #train
@@ -193,17 +170,19 @@ for epoch in range(1, num_epochs + 1):
   values['train_loss'].append(train_loss)
   values['val_loss'].append(val_loss)
   
+  # change lr
+  scheduler.step(val_loss)
+  
 final_test_metrics(network=unet,
                    val_dataloader=val_loader,
                    test_dataloader=test_loader,
                    train_losses=values['train_loss'],
                    val_losses=values['val_loss'],
                    device=device,
-                   use_mask = True,
-                   num_test_samples = 5, # conserve space
-                   save_model = False,
-                   save_path = "./metrics/test")
+                   use_mask=True,
+                   **metrics_param,
+                   save_path=save_path)
+  
+
   
   
-  # change lr
-  #scheduler.step(val_loss)
