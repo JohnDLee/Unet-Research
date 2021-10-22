@@ -7,11 +7,14 @@ Unet_research/results_test1/
 Unet_research/notebooks/
 Unet_research/**/*.ipynb
 *.zip
+**/*.sh
+**/!setup_requirements.sh
 
 # extra files
 *.ipynb_checkpoints
 **/.DS_Store
-**/__pycache__/
+**/__pycache__/**
+*.pyc
 
 # images for report
 images/

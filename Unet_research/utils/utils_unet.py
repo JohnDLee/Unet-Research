@@ -450,7 +450,7 @@ def init_weight_k_uni(layer):
         
         
 class Sample(nn.Module):
-# can convert this to the architecture and move the actual model creation elsewhere
+# creates a sample output for the UNET to test structures
 
     def __init__(self, init_channels, filters, output_channels, model_depth = 4, pool_mode = 'max', up_mode = 'upconv', connection = 'cat',  same_padding = True, use_batchnorm = True, use_dropblock = False, block_size = 0, max_drop_prob = 0, dropblock_ls_steps = 500, conv_layers_per_block = 2, activation_fcn = 'relu', neg_slope = 0):
         """Architecure for a UNET (requires input image dimensions to be factorable by model_depth * 2)

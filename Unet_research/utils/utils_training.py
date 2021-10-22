@@ -118,6 +118,9 @@ def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True, verb
             torch.cuda.empty_cache() # clear GPU
 
     return np.array(losses).mean()
+
+
+
   
 
 

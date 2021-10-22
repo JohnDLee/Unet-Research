@@ -105,7 +105,7 @@ def training(trial, train = True):
     val_dataset = CustomDataset(image_root=val_root + 'images',
                                   target_root=val_root + 'targets',
                                   mask_root=val_root + 'masks',
-                                  transform=train_transform)
+                                  transform=test_transform)
     test_dataset = CustomDataset(image_root=test_root + 'images',
                                  transform = test_transform)
 

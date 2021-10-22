@@ -6,6 +6,9 @@ def split_target(target):
     ''' splits our gt into [class0, class1] by inversing'''
     return torch.cat([target, 1-target], dim = 1)
 
+def split_mask(mask):
+    return torch.cat([mask, mask], dim = 1)
+
 def get_masked(segmentation, gt, mask, device):
     ''' creates a mask for our data'''
     new_mask = torch.cat([mask, mask], dim = 1)
