@@ -73,7 +73,7 @@ class CustomDataset(torch.utils.data.Dataset):
       
     sample = (image, label, mask)
 
-    if self._transform and self._data_type != 'validation':
+    if self._transform:
       sample = self._transform(sample)
 
     return sample
@@ -134,7 +134,12 @@ class AutoPad(nn.Module):
     for i in range(len(tup)):
       new_tup.append(TF.pad(tup[i], self._pad_sequence, self._fill, self._padding_mode ))
     return tuple(new_tup)
-  
+
+
+
+def dePad(segmentation_class, output_size = (584,565)):
+    return TF.crop(segmentation_class, 0, 0, output_size[0], output_size[1])
+    
 
 class Pad(nn.Module):
   
@@ -261,4 +266,5 @@ class ToTensor:
       else:
         new_tup.append(tup[i])
     return tuple(new_tup)
+
 

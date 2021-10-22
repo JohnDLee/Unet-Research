@@ -9,6 +9,7 @@ def split_target(target):
 def get_masked(segmentation, gt, mask, device):
     ''' creates a mask for our data'''
     new_mask = torch.cat([mask, mask], dim = 1)
+
     new_mask = new_mask.to(device)
     
     return new_mask * segmentation, new_mask * gt, new_mask

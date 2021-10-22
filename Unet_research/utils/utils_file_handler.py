@@ -18,9 +18,8 @@ def setup_logger(filepath):
 
 def setup_argparser():
     ''' sets up a parser for reading in data '''
-    parser = argparse.ArgumentParser(description='Process filepath and files.')
-    parser.add_argument('filepath', help = 'filepath to save metrics (should include .ini file)')
-    parser.add_argument('file', help='filename of .ini file')
+    parser = argparse.ArgumentParser(description='Enter Number of Trials.')
+    parser.add_argument('num_trials', metavar='num_trials', type = int, nargs = 1, default = 100, help = 'Number of trials to run')
     return parser
     
 

@@ -1,9 +1,17 @@
+# unneeded information for user/results of us running test
 **/makefile
-**/metrics/**
-/Unet_research/Test.ipynb
-/Unet_research/Debug.ipynb
-*ipynb_checkpoints
-*png
-*zip
-Comparing Translations
-*.DS_Store
+Unet_research/final_data/
+Unet_research/submission*/
+Unet_research/optimization_outputs/
+Unet_research/results_test1/
+Unet_research/notebooks/
+Unet_research/**/*.ipynb
+*.zip
+
+# extra files
+*.ipynb_checkpoints
+**/.DS_Store
+**/__pycache__/
+
+# images for report
+images/
