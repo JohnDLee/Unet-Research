@@ -70,18 +70,29 @@ def get_optimizer(trial, network_params):
     elif optimizer == 'adam':
         return optim.Adam(network_params, lr)
 
+def get_optimizer_ini(ini_dict, network_params):
+    optimizer = ini_dict['optimizer']
+    lr = ini_dict['lr']
+    if optimizer == 'sgd':
+        momentum = ini_dict["momentum"]
+        return optim.SGD(network_params, lr = lr, momentum = momentum)
+    elif optimizer == 'rmsprop':
+        momentum = ini_dict["momentum"]
+        return optim.RMSprop(network_params, lr = lr, momentum = momentum)
+    elif optimizer == 'adam':
+        return optim.Adam(network_params, lr)
 
 
-def training(trial, train = True):
+
+def training(trial = None,ini_file = None, train = True,save_path = 'results' ):
     ''' our objective function for training '''
 
-
-    model_params = get_model_params(trial)
-    general_params = get_general_params(trial)
-    
-    
-    # save path
-    save_path = 'results'
+    if ini_file:
+        model_params = read_config( ini_file, 'model_params')
+        general_params = read_config( ini_file, 'general_params')
+    elif trial:
+        model_params = get_model_params(trial)
+        general_params = get_general_params(trial)
     
       # set seed
     torch.manual_seed(0)
@@ -130,7 +141,11 @@ def training(trial, train = True):
 
     # optimizer / optimizer parameters
     params = unet.parameters()
-    optimizer = get_optimizer(trial, params)
+    
+    if ini_file:
+        optimizer = get_optimizer_ini(read_config(ini_file, 'optimizer_params'), params)
+    elif trial:
+        optimizer = get_optimizer(trial, params)
     
     # loss function
     loss_fn = nn.BCELoss()
@@ -200,22 +215,32 @@ def training(trial, train = True):
 
   
 if __name__ == '__main__':
-  # load study
-  study = joblib.load('results/study.pkl')
-
-  if os.path.exists('results/model.pth'): # if the model is already saved, then no need to retrain
-      train = False
-  else:
-      train = True
-      
-  # save parameters
-  all_params = {}
-  all_params['optimized'] = study.best_trial.params
-  all_params['constant'] = study.best_trial.user_attrs
-  with open('results/model_params', 'w') as outfile:
-    json.dump(all_params, outfile)
-  #train model w/ best trial
-  training(study.best_trial, train = train)
+    
+    # if args exist, then don't use study
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', dest='inifile', help = 'Ini file containing parameters to use' )
+    parser.add_argument('-s', dest ='saveloc', default = 'results', help = 'save location of files')
+    parser.add_argument('-t', dest='train', action = 'store_true')
+    inifile = parser.parse_args().inifile
+    train = parser.parse_args().train
+    save_path = parser.parse_args().saveloc
+    
+    if inifile:
+        # params will be known from inifile
+        training(ini_file = inifile, train = train, save_path = save_path)
+        
+    else:
+        # load study
+        study = joblib.load(save_path + '/study.pkl')
+        
+        # save parameters
+        all_params = {}
+        all_params['optimized'] = study.best_trial.params
+        all_params['constant'] = study.best_trial.user_attrs
+        with open(save_path + '/model_params', 'w') as outfile:
+            json.dump(all_params, outfile)
+        #train model w/ best trial
+        training(trial = study.best_trial, train = train, save_path = save_path)
   
   
 
