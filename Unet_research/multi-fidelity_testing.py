@@ -197,17 +197,13 @@ def training(trial = None,ini_file = None, train = True,save_path = 'results', i
           #report metrics
           values['train_loss'].append( train_loss)
           values['val_loss'].append(val_loss)
-
+      unet.load_state_dict(torch.load(save_path + '/model.pth',  map_location=torch.device(device)))
     else:
         # load parameters from the save_file to pretrained model
         # already done in final_test_metrics
-        pass
-    
-    # load best saveed model
-    unet.load_state_dict(torch.load(save_path + '/model.pth',  map_location=torch.device(device)))
-
+        unet.load_state_dict(torch.load('results/model.pth',  map_location=torch.device(device))) # hard coded
         
-    final_test_metrics(network=unet,
+    final_test_metrics_resized(network=unet,
                    val_dataloader=val_loader,
                    test_dataloader=test_loader,
                    train_losses=values['train_loss'],
@@ -216,7 +212,7 @@ def training(trial = None,ini_file = None, train = True,save_path = 'results', i
                    use_mask=True,
                    num_test_samples=20,
                    save_path=save_path,
-                   im_size=im_size)
+                   resize_size=im_size,)
   
   
 

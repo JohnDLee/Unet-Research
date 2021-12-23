@@ -1,15 +1,20 @@
 import numpy as np
-from torch._C import device
 from torch.functional import split
 from torch.serialization import save
-from torchvision import transforms
-import matplotlib.pyplot as plt
-import torch
-import os
 
+import torch
+
+from dropblock import DropBlock2D
+
+from utils.utils_unet import Dropblock2d_ichan
 from utils.utils_general import split_target, get_masked, TensortoPIL
 from utils.utils_metrics import *
 
+
+def set_dropblock_on(layer):
+    ''' sets dropblock to be in training mode '''
+    if type(layer) == DropBlock2D or type(layer) == Dropblock2d_ichan:
+        layer.training = True
 
 # training epoch
 def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device,use_mask = True, debug = False, verbose = False):
@@ -120,6 +125,48 @@ def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True, verb
     return np.array(losses).mean()
 
 
+# validation epoch
+def val_epoch_dropblock(epoch, network, loss_fn, dataloader, device, use_mask = True, verbose = False):
+
+    if verbose:
+        print(f"\nVal Epoch {epoch}")
+    # set to evaluation mode
+    network.eval()
+    network.apply(set_dropblock_on) # set dropblock to be on when calculating val loss
+    losses = []
+    with torch.no_grad():
+        for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
+        
+            image_batch = image_batch.to(device)
+            
+            segmentation = network(image_batch)
+            
+            
+            # process gt
+            gt = split_target(gt)
+            gt = gt.to(device)
+
+            
+            # if using masks, only get region with mask
+            if use_mask:
+                segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
+
+            #get orig image and segmentation
+            loss = loss_fn(segmentation, gt)
+            
+            # multiply by total pixels and divide by number of 1 pixels in mask
+            if use_mask:
+              loss *= (segmentation.numel() / mask.count_nonzero())
+            
+            losses.append(loss.item()) # save losses
+            
+            if verbose:
+                print(f'\tBatch {batch_idx + 1}/{len(dataloader)}: validation loss = {losses[-1]}')
+          
+            del segmentation, gt, mask, loss
+            torch.cuda.empty_cache() # clear GPU
+
+    return np.array(losses).mean()
 
   
 

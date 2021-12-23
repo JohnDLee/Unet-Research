@@ -4,6 +4,8 @@ from utils.utils_augmentations import *
 import albumentations as A
 import numpy as np
 
+import argparse
+
 def train_validation_split(train_path, destination_dir, train_pct = .7, seed = None):
     '''splits the train and validation data -> stores the validation and train in destination path'''
     if seed is not None:
@@ -58,9 +60,19 @@ def train_validation_split(train_path, destination_dir, train_pct = .7, seed = N
     
 if __name__=='__main__':
     
+    parser = argparse.ArgumentParser(description= "Preprocesses UNET training images", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-f',dest = 'destination_dir', type = str, default = 'final_data', help = 'Destination directory of modified data')
+    parser.add_argument('-width', dest = 'width', type = int, default = 565, help = 'Width of final images')
+    parser.add_argument('-height', dest = 'height', type = int, default = 584, help = 'Heigh of final images')
+    args = parser.parse_args()
+    
     # split training and validation data
     train_path = 'datasets/training'
-    destination_dir = 'final_data'
+    
+    destination_dir = args.destination_dir # our destination will be specified in the arg
+    
+    
+    
     if not os.path.exists(destination_dir):
         os.mkdir(destination_dir)
     train_pct = .7
@@ -78,10 +90,12 @@ if __name__=='__main__':
         # grayscale everything
         transforms_train = A.Compose([A.ToGray(always_apply = True),
                                 A.Flip(p = .5), # randomly flip horizontally or vertically or both
-                                A.Rotate(limit = 180, p = .95, border_mode=1)
+                                A.Rotate(limit = 180, p = .95, border_mode=1),
+                                A.Resize(args.height, args.width,always_apply=True )
                                 ], additional_targets = { 'image': 'image',
                                                     'target': 'mask',
                                                     'mask': 'mask'}
+                                
                                 )
         augmentations(input_dir = new_train_path,
                     output_dir = output_path,
@@ -95,7 +109,8 @@ if __name__=='__main__':
     output_val_path = destination_dir + '/gray_validation'
     if not os.path.exists(output_val_path):
         print("Creating Grayscale Val Images")
-        val_transforms = A.Compose([A.ToGray(always_apply = True)], 
+        val_transforms = A.Compose([A.ToGray(always_apply = True),
+                                    A.Resize(args.height, args.width,always_apply=True )], 
                             additional_targets = { 'image': 'image',
                                                     'target': 'mask',
                                                     'mask': 'mask'}
@@ -113,7 +128,7 @@ if __name__=='__main__':
     # merge our test data and rename to our convention
     
     test_path = 'datasets/test'
-    destination_test_path = 'final_data/test'
+    destination_test_path = destination_dir + '/test'
     if not os.path.exists(destination_test_path):
         shutil.copytree(test_path, destination_test_path)
     try:
@@ -127,7 +142,8 @@ if __name__=='__main__':
     output_test_path = destination_dir + '/gray_test'
     if not os.path.exists(output_test_path):
         print("Creating Grayscale Test Images")
-        test_transforms = A.Compose([A.ToGray(always_apply = True)], 
+        test_transforms = A.Compose([A.ToGray(always_apply = True),
+                                     A.Resize(args.height, args.width,always_apply=True )], 
                             additional_targets = { 'image': 'image', 'mask':'mask'})
                                             
         augmentations_test(input_dir = new_test_path,

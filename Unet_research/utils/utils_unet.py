@@ -4,13 +4,67 @@ import torch.optim as optim
 from torch.utils.checkpoint import checkpoint
 from torchvision import transforms
 from dropblock import DropBlock2D, LinearScheduler
+import torch.nn.functional as F
+from numpy import product
+import os
 
 
+
+# channels are dropped independently in this implementation
+class Dropblock2d_ichan(nn.Module):
+    ''' Credits to Lauren Partin,@ University of N.D.'''
+    def __init__(self,drop_prob=0.5, block_size=3):
+        super(Dropblock2d_ichan, self).__init__()
+        self.drop_prob = drop_prob
+        self.block_size = block_size
+    # drop-prob is the probability of zeroing a unit 
+    # in paper, they use a linear scheme to decrease keep_prob as training progresses
+    # start with drop-prob=0, and gradually increase to drop-prob = 0.25 (e.g.)
+    def set_drop_prob(self, p):
+        self.drop_prob = p
+        
+    def get_gamma(self,feat_size):
+        keep_prob = 1 - self.drop_prob
+        gamma = (1-keep_prob)/(self.block_size**2) * (feat_size**2)/((feat_size-self.block_size+1)**2)
+        return gamma
+    
+    def get_drop_prob(self):
+        return self.drop_prob
+    
+    def forward(self, tensor):
+
+        if not self.training or self.drop_prob == 0.:
+            return tensor
+
+        feat_size = tensor.size()[1]
+        gamma = self.get_gamma(feat_size)
+        #p_tensor = torch.new_full(tensor.shape, gamma, device=tensor.device) 
+        p_tensor = torch.ones_like(tensor, device=tensor.device) * gamma
+        mask = torch.bernoulli(p_tensor)
+        bernoulli_mask = mask.clone()
+        kernel = torch.ones((1,1,self.block_size,self.block_size), dtype=torch.double)
+        # apply kernel to set block_size of neighbors to 1 around 1 values in bernoulli mask 
+        data_shp = mask.size()
+        
+        maxpool = F.max_pool2d(mask.view(-1, 1, data_shp[2], data_shp[3]),
+                                kernel_size=(self.block_size, self.block_size),
+                                stride=(1, 1), padding=self.block_size // 2).view(data_shp[0], data_shp[1], data_shp[2], data_shp[3])
+        
+        mask = 1 - maxpool 
+        tensor *= mask
+
+        # if no elements are dropped, this would result in nan elements
+        total_elems = product(mask.shape)
+        scale_denominator = 1. - torch.true_divide(total_elems - torch.sum(mask), total_elems)
+        if scale_denominator != 0:
+            scaling_factor = 1. / scale_denominator  
+        tensor *= scaling_factor
+        return tensor
 
 class UNet(nn.Module):
 # can convert this to the architecture and move the actual model creation elsewhere
 
-    def __init__(self, init_channels, filters, output_channels, model_depth = 4, pool_mode = 'max', up_mode = 'upconv', connection = 'cat',  same_padding = True, use_batchnorm = True, use_dropblock = True, block_size = 7, max_drop_prob = .1, dropblock_ls_steps = 500, conv_layers_per_block = 2, activation_fcn = 'relu', neg_slope = .01):
+    def __init__(self, init_channels, filters, output_channels, model_depth = 4, pool_mode = 'max', up_mode = 'upconv', connection = 'cat',  same_padding = True, use_batchnorm = True, use_dropblock = True, block_size = 7, max_drop_prob = .1, dropblock_ls_steps = 500, dropblock_ichan = False, conv_layers_per_block = 2, activation_fcn = 'relu', neg_slope = .01,):
         """Architecure for a UNET (requires input image dimensions to be factorable by model_depth * 2)
 
           inputs:
@@ -62,7 +116,13 @@ class UNet(nn.Module):
         
         self._use_dropblock = use_dropblock
         if use_dropblock:   
-            self._dropblock = LinearScheduler(DropBlock2D(block_size = block_size, drop_prob = 0.),
+            if dropblock_ichan:
+                self._dropblock = LinearScheduler(Dropblock2d_ichan(block_size = block_size, drop_prob = 0.),
+                                              start_value = 0.,
+                                              stop_value = max_drop_prob,
+                                              nr_steps = dropblock_ls_steps)
+            else:
+                self._dropblock = LinearScheduler(DropBlock2D(block_size = block_size, drop_prob = 0.),
                                               start_value = 0.,
                                               stop_value = max_drop_prob,
                                               nr_steps = dropblock_ls_steps)
@@ -412,6 +472,49 @@ class UNet(nn.Module):
         
         return x
 
+    def save_intermediate_tensors(self, x, save_dir):
+            
+        skip_conns = []
+        
+        # dummy input to circumvent no gradient problem
+        dummy = torch.tensor(1.0, requires_grad=True)
+        
+        # encoding
+        for step in range(self._model_depth):
+            x = checkpoint(self.checkpoint_function(self.down_blocks[step][0]), x, dummy) # convolution
+            torch.save(x.detach().clone().cpu(), os.path.join(save_dir, f'convolution{step}.pt'))
+            #print(f'Step {step} conv: ', x.size())
+            skip_conns.append(x.clone()) # appends a skip connection
+            x = checkpoint(self.checkpoint_function(self.down_blocks[step][1]), x, dummy) # pool
+            torch.save(x.detach().clone().cpu(), os.path.join(save_dir, f'pool{step}.pt'))
+            #print(f'Step {step} pool: ', x.size())
+        
+        # connection
+        x = checkpoint(self.checkpoint_function(self.conn_block), x, dummy)
+        torch.save(x.detach().clone().cpu(), os.path.join(save_dir, 'connection.pt'))
+        #print(f'Step conn: ', x.size())
+         
+        skip_conns = skip_conns[::-1] # reverse list
+        for step in range(self._model_depth):
+            x = checkpoint(self.checkpoint_function(self.up_blocks[step][0]), x, dummy) # upsample
+            torch.save(x.detach().clone().cpu(), os.path.join(save_dir, f'upsample{step}.pt'))
+            #print(f'Step {step} upsample: ', x.size())
+            x = self.skip_connection(x, skip_conns[step]) # performs skip connection
+            x = checkpoint(self.checkpoint_function(self.up_blocks[step][1]), x, dummy) # conv
+            torch.save(x.detach().clone().cpu(), os.path.join(save_dir, f'deconvolution{step}.pt'))
+            #print(f'Step {step} conv: ', x.size())
+            
+        x = self.output_conv(x)
+        torch.save(x.detach().clone().cpu(), os.path.join(save_dir, 'output.pt'))
+        #print(f'Step final: ', x.size())
+
+        # avoid issues
+        x = x.clamp(0,1) # clamps output
+        x[x!=x] = 0 # avoids nan values
+        
+        # free up memory
+        del skip_conns, dummy
+        
 def set_optimizer(optimizer, network_params, optim_params):
     if optimizer == 'sgd':
         return optim.SGD(network_params, **optim_params)
@@ -538,3 +641,6 @@ class Sample(nn.Module):
         
     def forward(self,x):
         return (self._out(self._model(x)))
+    
+
+

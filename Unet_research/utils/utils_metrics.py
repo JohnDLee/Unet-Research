@@ -14,6 +14,7 @@ import plotly
 import kaleido
 import joblib
 import sklearn.metrics as metrics
+import torchvision.transforms as transforms
 
 from utils.utils_general import TensortoPIL, get_masked, split_target
 from utils.utils_dataset import dePad
@@ -30,7 +31,7 @@ from utils.utils_dataset import dePad
 ###### CHANGE THIS LATER
 
 # plotting test epoch
-def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, val_losses, device, num_test_samples = 20, use_mask = True, save_path = None):
+def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, val_losses, device, num_test_samples = 20, use_mask = True, save_path = None, im_size = (584,565)):
     
     
     # setup save folders
@@ -60,8 +61,7 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
                         val_losses=val_losses,
                         save_path=loss_folder)
     
-    # load the model at best point
-    network.load_state_dict(torch.load(os.path.join(save_path, 'model.pth')))
+
     # save model outputs
     network.eval()
     with torch.no_grad():
@@ -87,7 +87,8 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
                 save_example(unbatched_image=test_image_batch[image],
                                 unbatched_segmentation=test_segmentation[image],
                                 id=im_id,
-                                save_path=test_folder
+                                save_path=test_folder,
+                                im_size=im_size
                                 )
                 count += 1
                 # break if > num_test_samples is saved
@@ -148,7 +149,8 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
                                     unbatched_segmentation=val_seg_masked[image],
                                     unbatched_gt=val_gt_masked[image],
                                     id=im_id,
-                                    save_path=im_folder
+                                    save_path=im_folder,
+                                    im_size=im_size
                                     )
                 fig_images['original'].append(images[0])
                 fig_images['vessel_seg'].append(images[1])
@@ -160,19 +162,22 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
                 save_confusion_matrix(unbatched_segmentation=val_seg_masked[image],
                                     unbatched_gt=val_gt_masked[image],
                                     unbatched_mask=val_mask[image],
-                                    save_path=im_folder)
+                                    save_path=im_folder,
+                                    im_size=im_size)
                 
                 # save contour map
                 contours = save_contour_map(unbatched_segmentation=val_seg_masked[image],
                                  unbatched_gt=val_gt_masked[image],
-                                 save_path=im_folder)
+                                 save_path=im_folder,
+                                 im_size=im_size)
                 fig_images['contour_map_vessel'].append(contours[0])
                 fig_images['contour_map_non_vessel'].append(contours[1])
                 
                 # save overlap map
                 save_overlap_map(unbatched_segmentation=val_seg_masked[image],
                                  unbatched_gt=val_gt_masked[image],
-                                 save_path=im_folder)
+                                 save_path=im_folder,
+                                 im_size=im_size)
                 fig_images['overlap_map_seg'].append(val_seg_masked[image])
                 fig_images['overlap_map_gt'].append(val_gt_masked[image])
     
@@ -180,7 +185,7 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
                 # save AUCROC F1 DICE to df
                 scores = get_accuracy_metrics(unbatched_segmentation=val_seg_masked[image],
                                             unbatched_gt = val_gt_masked[image],
-                                            unbatched_mask = val_mask[image])
+                                            unbatched_mask = val_mask[image],)
                 scores_dict['Validation_Image'].append(im_id)
                 scores_dict['F1_Vessel'].append(scores[0])
                 scores_dict['AUROC_Vessel'].append(scores[1])
@@ -200,13 +205,13 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
             axes[row][1].imshow(fig_images['vessel_seg'][row], cmap = 'gray')
             axes[row][2].imshow(fig_images['vessel_gt'][row], cmap = 'gray')
             axes[row][3].imshow(fig_images['contour_map_vessel'][row], cmap = cm.seismic)
-            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][0])), cmap = 'gray')
-            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][0])), cmap = 'Reds', alpha = .5)
+            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][0], im_size)), cmap = 'gray')
+            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][0], im_size)), cmap = 'Reds', alpha = .5)
             axes[row][5].imshow(fig_images['non_vessel_seg'][row], cmap = 'gray')
             axes[row][6].imshow(fig_images['non_vessel_gt'][row], cmap = 'gray')
             axes[row][7].imshow(fig_images['contour_map_non_vessel'][row], cmap = cm.seismic)
-            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][1])), cmap = 'gray')
-            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][1])), cmap = 'Reds', alpha = .5)
+            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][1], im_size)), cmap = 'gray')
+            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][1], im_size)), cmap = 'Reds', alpha = .5)
         axes[0][0].set_title("Original")
         axes[0][1].set_title("Vessel Seg")
         axes[0][2].set_title("Vessel GT")
@@ -225,9 +230,240 @@ def final_test_metrics(network, val_dataloader, test_dataloader, train_losses, v
         scores_df = pd.DataFrame(scores_dict)
         scores_df.to_csv(os.path.join(val_folder, 'scores.csv'), index = False)
         
+    
+    return
+
+
+# plotting test epoch
+def final_test_metrics_resized(network, val_dataloader, test_dataloader, train_losses, val_losses, device, num_test_samples = 20, use_mask = True, save_path = None, resize_size = (584,565), im_size = (584,565)):
+    
+    
+    # setup save folders
+    loss_folder = os.path.join(save_path, 'losses')
+    test_folder = os.path.join(save_path, 'test_images')
+    val_folder = os.path.join(save_path, 'val_images')
+
+    
+    # create the folders if they don't exist
+    if not os.path.exists(loss_folder):
+        os.mkdir(loss_folder)
+    if not os.path.exists(test_folder):
+        os.mkdir(test_folder)
+    if not os.path.exists(val_folder):
+        os.mkdir(val_folder)
+
+
+
+    
+    # save losses
+    save_losses_as_text(train_losses=train_losses,
+                        val_losses=val_losses,
+                        save_path=loss_folder)
+    
+    # save loss profile
+    save_loss_profile(train_losses=train_losses,
+                        val_losses=val_losses,
+                        save_path=loss_folder)
+    
+
+    # save model outputs
+    network.eval()
+    
+    #set up resizing
+    reg = transforms.Resize(im_size)
+    new = transforms.Resize(resize_size)
+            
+    with torch.no_grad():
+        
+        count = 0
+        for test_id, (test_image_batch, _, test_mask) in enumerate(test_dataloader):
+            
+
+            # test run
+            test_image_batch = new(test_image_batch)
+            test_image_batch = test_image_batch.to(device)
+            test_segmentation = network(test_image_batch)
+            
+            # move onto cpu
+            test_segmentation = test_segmentation.cpu()
+            
+            # resize back up
+            test_image_batch = reg(test_image_batch)
+            test_segmentation = reg(test_segmentation)
+            
+            # save operations
+            for image in range(len(test_image_batch)): # for each image in the batch
+                
+                # get image id
+                im_id = (image+1)+(test_id * len(test_image_batch))
+                
+                
+                # save an example
+                save_example(unbatched_image=test_image_batch[image],
+                                unbatched_segmentation=test_segmentation[image],
+                                id=im_id,
+                                save_path=test_folder,
+                                im_size=im_size
+                                )
+                count += 1
+                # break if > num_test_samples is saved
+                if count >= num_test_samples:
+                    break
+            
+            # free up memory
+            del test_segmentation, test_image_batch
+            
+            # break if > num_test_samples is saved
+            if count >= num_test_samples:
+                break
+        
+        
+        fig_images = {'original':[],
+                      'vessel_seg':[],
+                      'vessel_gt':[],
+                      'contour_map_vessel':[],
+                      'overlap_map_seg':[],
+                      'overlap_map_gt':[],
+                      'non_vessel_seg':[],
+                      'non_vessel_gt':[],
+                      'contour_map_non_vessel':[],
+                      }
+        scores_dict = {'Validation_Image':[], 'F1_Vessel':[], 'AUROC_Vessel':[], 'Accuracy_Vessel':[]}
+        
+        
+        for val_id, (val_image_batch, val_gt, val_mask) in enumerate(val_dataloader):
+
+            # val run
+            val_image_batch = new(val_image_batch)
+            val_image_batch = val_image_batch.to(device)
+            val_segmentation = network(val_image_batch)
+            
+            # get gt
+            val_gt = new(val_gt)
+            val_gt = split_target(val_gt)
+            val_gt = val_gt.to(device)
+        
+            # if using masks, only get region with mask
+            val_mask = new(val_mask)
+            if use_mask:
+                val_seg_masked, val_gt_masked, val_mask = get_masked(val_segmentation, val_gt, val_mask, device)
+            
+            
+            # move back onto cpu
+            val_seg_masked = val_seg_masked.cpu()
+            val_gt_masked = val_gt_masked.cpu()
+            val_mask = val_mask.cpu()
+            
+            # resize back up
+            val_image_batch = reg(val_image_batch)
+            val_segmentation = reg(val_segmentation)
+            val_gt = reg(val_gt)
+            val_mask = reg(val_mask)
+            val_seg_masked = reg(val_seg_masked)
+            val_gt_masked = reg(val_gt_masked)
+            
+            # save operations
+            for image in range(len(val_image_batch)): # get each image in one image batch
+                
+                # create a folder
+                im_id = (image+1)+(val_id * len(val_image_batch))
+                im_folder = os.path.join(val_folder, f"val_image{im_id}")
+                if not os.path.exists(im_folder):
+                    os.mkdir(im_folder)
+                
+                
+                
+                # save examples
+                images = save_example(unbatched_image=val_image_batch[image],
+                                    unbatched_segmentation=val_seg_masked[image],
+                                    unbatched_gt=val_gt_masked[image],
+                                    id=im_id,
+                                    save_path=im_folder,
+                                    im_size=im_size
+                                    )
+                fig_images['original'].append(images[0])
+                fig_images['vessel_seg'].append(images[1])
+                fig_images['non_vessel_seg'].append(images[2])
+                fig_images['vessel_gt'].append(images[3])
+                fig_images['non_vessel_gt'].append(images[4])
+
+                # save confusion_matrix
+                save_confusion_matrix(unbatched_segmentation=val_seg_masked[image],
+                                    unbatched_gt=val_gt_masked[image],
+                                    unbatched_mask=val_mask[image],
+                                    save_path=im_folder,
+                                    im_size=im_size)
+                
+                # save contour map
+                contours = save_contour_map(unbatched_segmentation=val_seg_masked[image],
+                                 unbatched_gt=val_gt_masked[image],
+                                 save_path=im_folder,
+                                 im_size=im_size)
+                fig_images['contour_map_vessel'].append(contours[0])
+                fig_images['contour_map_non_vessel'].append(contours[1])
+                
+                # save overlap map
+                save_overlap_map(unbatched_segmentation=val_seg_masked[image],
+                                 unbatched_gt=val_gt_masked[image],
+                                 save_path=im_folder,
+                                 im_size=im_size)
+                fig_images['overlap_map_seg'].append(val_seg_masked[image])
+                fig_images['overlap_map_gt'].append(val_gt_masked[image])
+    
+    
+                # save AUCROC F1 DICE to df
+                
+                #scores = get_accuracy_metrics(unbatched_segmentation=val_seg_masked[image],
+                #                            unbatched_gt = val_gt_masked[image],
+                #                            unbatched_mask = val_mask[image],)
+                scores = [0,0,0]
+                scores_dict['Validation_Image'].append(im_id)
+                scores_dict['F1_Vessel'].append(scores[0])
+                scores_dict['AUROC_Vessel'].append(scores[1])
+                scores_dict['Accuracy_Vessel'].append(scores[2])
+    
+    
+            # free mem
+            del val_seg_masked, val_gt_masked, val_mask, val_image_batch, val_gt
+    
+        # make/save a figure containing all the things from 
+        rows = len(fig_images['original'])
+        cols = len(fig_images)
+        fig, axes = plt.subplots(nrows = rows, ncols = cols, figsize = (cols * 7, rows * 7))
+        for row in range(rows):
+            axes[row][0].imshow(fig_images['original'][row])
+            axes[row][1].imshow(fig_images['vessel_seg'][row], cmap = 'gray')
+            axes[row][2].imshow(fig_images['vessel_gt'][row], cmap = 'gray')
+            axes[row][3].imshow(fig_images['contour_map_vessel'][row], cmap = cm.seismic)
+            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][0], im_size)), cmap = 'gray')
+            axes[row][4].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][0], im_size)), cmap = 'Reds', alpha = .5)
+            axes[row][5].imshow(fig_images['non_vessel_seg'][row], cmap = 'gray')
+            axes[row][6].imshow(fig_images['non_vessel_gt'][row], cmap = 'gray')
+            axes[row][7].imshow(fig_images['contour_map_non_vessel'][row], cmap = cm.seismic)
+            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_gt'][row][1], im_size)), cmap = 'gray')
+            axes[row][8].imshow(TensortoPIL(dePad(fig_images['overlap_map_seg'][row][1], im_size)), cmap = 'Reds', alpha = .5)
+        axes[0][0].set_title("Original")
+        axes[0][1].set_title("Vessel Seg")
+        axes[0][2].set_title("Vessel GT")
+        axes[0][3].set_title("Contour Map-Vessel")
+        axes[0][4].set_title("Overlap Map-Vessel")
+        axes[0][5].set_title("Nonvessel Seg")
+        axes[0][6].set_title("Nonvessel GT")
+        axes[0][7].set_title("Contour Map-Nonvessel")
+        axes[0][8].set_title("Overlap Map-Nonvessel")
+    
+        # save figure
+        fig.savefig(os.path.join(val_folder, 'all_validations.png'))
+        plt.close(fig)
+        
+        # save our DF
+        scores_df = pd.DataFrame(scores_dict)
+        scores_df.to_csv(os.path.join(val_folder, 'scores.csv'), index = False)
         
     
     return
+
+
 
 
 def save_optimization_metrics(study, save_path = '.'):
@@ -316,7 +552,7 @@ def save_loss_profile(train_losses, val_losses, save_path = '.' ):
 
 
 
-def save_contour_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
+def save_contour_map(unbatched_segmentation, unbatched_gt, save_path = '.', im_size = (584,565)):
     ''' creates and saves a contour map between a segmentation class and gt class to observe class mismatches
     unbatched_segmentation and unbatched_gt are a single segmentation and gt of an image batch'''
 
@@ -333,13 +569,13 @@ def save_contour_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
     fig, (ax1,ax2) = plt.subplots(1, 2, figsize = (25, 10))
     
     # create vessel class
-    diff1 = get_diff(dePad(unbatched_segmentation[0]), dePad(unbatched_gt[0]))
+    diff1 = get_diff(dePad(unbatched_segmentation[0], im_size), dePad(unbatched_gt[0], im_size))
     div1_map = ax1.imshow(diff1, cmap = cm.seismic)
     fig.colorbar(div1_map, ax = ax1)
     ax1.set_title('Divergence Map Vessel Segmentation', fontsize = 12)
     
     # create non-vessel class image
-    diff2 = get_diff(dePad(unbatched_segmentation[1]), dePad(unbatched_gt[1]))
+    diff2 = get_diff(dePad(unbatched_segmentation[1], im_size), dePad(unbatched_gt[1], im_size))
     div2_map = ax2.imshow(diff2, cmap = cm.seismic)
     fig.colorbar(div2_map, ax = ax2)
     ax1.set_title('Divergence Map Non-Vessel Segmentation', fontsize = 12)
@@ -352,13 +588,13 @@ def save_contour_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
     
     return diff1, diff2
     
-def save_overlap_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
+def save_overlap_map(unbatched_segmentation, unbatched_gt, save_path = '.', im_size = (584, 565)):
     
     fig, (ax1,ax2) = plt.subplots(1, 2, figsize = (25, 10))
     
     # create numpy arrays of thresholded value
-    mask0 = torch.round(dePad(unbatched_segmentation[0])).numpy()
-    mask1 = torch.round(dePad(unbatched_segmentation[1])).numpy()
+    mask0 = torch.round(dePad(unbatched_segmentation[0], im_size)).numpy()
+    mask1 = torch.round(dePad(unbatched_segmentation[1], im_size)).numpy()
     
     # create mask
     masked0 = np.ma.masked_where(mask0 == 0, mask0)
@@ -373,12 +609,12 @@ def save_overlap_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
                    (1, 0, 0))}
     
     # create vessel class
-    ax1.imshow(TensortoPIL(dePad(unbatched_gt[0])), cmap = 'gray')
+    ax1.imshow(TensortoPIL(dePad(unbatched_gt[0], im_size)), cmap = 'gray')
     ax1.imshow(masked0, cmap = LinearSegmentedColormap('custom_cmap', cdict), )#alpha = .5)
     ax1.set_title('Overlap Vessel Segmentation', fontsize = 12)
     
     # create non-vessel class image
-    ax2.imshow(TensortoPIL(dePad(unbatched_gt[1])), cmap = 'gray')
+    ax2.imshow(TensortoPIL(dePad(unbatched_gt[1], im_size)), cmap = 'gray')
     ax2.imshow(masked1, cmap = LinearSegmentedColormap('custom_cmap', cdict), )#alpha = .5)
     ax2.set_title('Overlap Non-Vessel Segmentation', fontsize = 12)
     
@@ -387,7 +623,7 @@ def save_overlap_map(unbatched_segmentation, unbatched_gt, save_path = '.'):
         
     plt.close(fig)
 
-def save_confusion_matrix(unbatched_segmentation, unbatched_gt, unbatched_mask, save_path = '.'):
+def save_confusion_matrix(unbatched_segmentation, unbatched_gt, unbatched_mask, save_path = '.', im_size = (584, 565)):
     ''' creates and saves a confusion matrix of true/false positives and negatives to observe how many mismatch in classes there are
     inputs should be masked if necessary,
     For pixels within (threshold) of their appropriate class, they are considered true, otherwise if they are within (threshold) from their opposite class, they are false
@@ -421,7 +657,7 @@ def save_confusion_matrix(unbatched_segmentation, unbatched_gt, unbatched_mask, 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (20, 8) )
     
     # get first class conf matrix
-    data_vessel = np.array(get_true_false(dePad(unbatched_segmentation[0]), dePad(unbatched_gt[0]), dePad(unbatched_mask[0])))
+    data_vessel = np.array(get_true_false(dePad(unbatched_segmentation[0], im_size), dePad(unbatched_gt[0], im_size), dePad(unbatched_mask[0], im_size)))
     conf_mat1 = ax1.matshow(data_vessel, cmap = cm.coolwarm)
     for (i, j), z in np.ndenumerate(data_vessel):
         ax1.text(j, i, '{:0.1f}'.format(z), ha='center', va='center',
@@ -431,7 +667,7 @@ def save_confusion_matrix(unbatched_segmentation, unbatched_gt, unbatched_mask, 
     ax1.set_title(f"Confusion Matrix (.5 Thresholded) - Vessel Segmentation")
     
     # get Secong class conf matrix
-    data_vessel2 = np.array(get_true_false(dePad(unbatched_segmentation[1]), dePad(unbatched_gt[1]), dePad(unbatched_mask[1])))
+    data_vessel2 = np.array(get_true_false(dePad(unbatched_segmentation[1], im_size), dePad(unbatched_gt[1], im_size), dePad(unbatched_mask[1], im_size)))
     conf_mat2 = ax2.matshow(data_vessel2, cmap = cm.coolwarm)
     for (i, j), z in np.ndenumerate(data_vessel2):
         ax2.text(j, i, '{:0.1f}'.format(z), ha='center', va='center',
@@ -447,7 +683,7 @@ def save_confusion_matrix(unbatched_segmentation, unbatched_gt, unbatched_mask, 
     plt.close(fig)
     
     
-def save_example(unbatched_image, unbatched_segmentation, unbatched_gt = None, id = 0, save_path = '.'):
+def save_example(unbatched_image, unbatched_segmentation, unbatched_gt = None, id = 0, save_path = '.', im_size = (584, 565)):
     ''' saves the image, segmentation and ground truth of one example (takes in raw tensor form)
         if gt = None, no ground truth will be displayed
         Segmentation and GT should already be in image format (or a list containing images)'''
@@ -464,13 +700,13 @@ def save_example(unbatched_image, unbatched_segmentation, unbatched_gt = None, i
             axes.append(ax)
             
         # add images 
-        tuple_images.append(TensortoPIL(dePad(unbatched_image)))
+        tuple_images.append(TensortoPIL(dePad(unbatched_image, im_size)))
         axes[0].imshow(tuple_images[0]) # plain image
         axes[0].set_title("Base Image")
-        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[0])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[0], im_size)))
         axes[1].imshow(tuple_images[1], cmap = 'gray') # first class
         axes[1].set_title("Vessel Segmentation")
-        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[1])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[1], im_size)))
         axes[2].imshow(tuple_images[2], cmap = 'gray') # inverse class
         axes[2].set_title("Non-vessel Segmentation")
         
@@ -486,21 +722,23 @@ def save_example(unbatched_image, unbatched_segmentation, unbatched_gt = None, i
                 axes.append(ax)
 
         # add images 
-        tuple_images.append(TensortoPIL(dePad(unbatched_image)))
+        tuple_images.append(TensortoPIL(dePad(unbatched_image, im_size)))
         axes[0].imshow(tuple_images[0]) # plain image
         axes[0].set_title("Base Image")
-        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[0])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[0], im_size)))
         axes[1].imshow(tuple_images[1], cmap = 'gray') # first class
         axes[1].set_title("Vessel Segmentation")
-        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[1])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_segmentation[1], im_size)))
         axes[2].imshow(tuple_images[2], cmap = 'gray') # inverse class
         axes[2].set_title("Non-vessel Segmentation")
-        tuple_images.append(TensortoPIL(dePad(unbatched_gt[0])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_gt[0], im_size)))
         axes[3].imshow(tuple_images[3], cmap = 'gray') # first gt
         axes[3].set_title("Vessel GT")
-        tuple_images.append(TensortoPIL(dePad(unbatched_gt[1])))
+        tuple_images.append(TensortoPIL(dePad(unbatched_gt[1], im_size)))
         axes[4].imshow(tuple_images[4], cmap = 'gray') # inverse gt
         axes[4].set_title("Non-vessel GT")
+        
+        torch.save(unbatched_segmentation.detach().clone().cpu(), os.path.join(save_path, "tensor.pt"))
     
         fig.suptitle('Validation Example', x = .25)
         name = 'validation'

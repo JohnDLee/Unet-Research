@@ -3,11 +3,12 @@ import torch
 import torch.nn as nn
 import json
 import copy
+from torchvision.transforms.functional import affine
 from dropblock import DropBlock2D
 from torch.utils.data import DataLoader
 import numpy as np
 
-from utils.utils_unet import Dropblock2d_ichan, UNet
+from utils.utils_unet import UNet
 from utils.utils_general import split_target, split_mask
 from utils.utils_dataset import *
 from utils.utils_metrics import *
@@ -24,37 +25,96 @@ def sort_params(name_list, param_dict):
             
     return sectioned_params
 
-def set_dropblock_on(layer):
-    ''' sets dropblock to be in training mode '''
-    if type(layer) == DropBlock2D or type(layer) == Dropblock2d_ichan:
-        layer.training = True
-
+class TranslateGenerator():
+    ''' Sections of pieces of the data and hashes them
+    to allow for reconstruction'''
+    def __init__(self, image_batch, stamp_size = 32):
+        self._image_batch = image_batch
+        self._stamp_size = stamp_size
+        self._image_split = self.split_image(image_batch, stamp_size) # split the image
+        
+        hash_list = [x for x in range(len(self._image_split))]
+        self._pre_std_tensor = hash_list
+        self._pre_avg_tensor = hash_list
+        
+        self._reconstructed_mean = None
+        self._reconstructed_std = None
+        
+    def split_image(self, image_batch, size):
+        '''split an image by size into an unsqueezed list'''
+        temp = [image_batch[:,:,:,i:i+size] for i in range(0, image_batch.size()[3], size)]
+        split_tensor = []
+        for t in temp:
+            split_tensor+=[t[:,:,i:i+size] for i in range(0, image_batch.size()[2], size)]
+        return split_tensor
     
+    def get_images(self):
+        '''generator for our images and their corresponding hash'''
+        hash = 0
+        for split in self._image_split:
+            yield split, hash
+            hash += 1
+    
+    def add_to_std_tensor(self, stamp, hash):
+        ''' add to our std tensor'''
+        self._pre_std_tensor[hash] = stamp
+    
+    def add_to_mean_tensor(self, stamp, hash):
+        ''' add to our mean tensor'''
+        self._pre_avg_tensor[hash]= stamp
+    
+    def reconstruct_std(self):
+        '''reconstructs the std tensor'''
+        size = self._stamp_size
+        height = len([i for i in range(0, self._image_batch.size()[2], size)])
+        self._reconstructed_std = torch.cat([torch.cat(self._pre_std_tensor[i:i + height], dim = 2) for i in range(0, len(self._pre_avg_tensor), height)], dim= 3)
+        return self._reconstructed_std
+        
+    
+    def reconstruct_mean(self):
+        '''reconstructs the mean tensor'''
+        size = self._stamp_size
+        height = len([i for i in range(0, self._image_batch.size()[2], size)])
+        self._reconstructed_mean = torch.cat([torch.cat(self._pre_avg_tensor[i:i + height], dim = 2) for i in range(0, len(self._pre_avg_tensor), height)], dim= 3)
+        return self._reconstructed_mean
+        
+
+
 
 def test_uncertainty( network, loss_fn, dataloader, device, num_iter = 1000, use_mask = True, verbose = False, save = True, save_location = '.'):
-    
+    ''' tests uncertainty'''
     losses = []
     with torch.no_grad():
         for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
-            tensors = []
-            # move image to GPU
             
-
-            image_batch = image_batch.to(device)
+            tensors = []
+            
+            # move image to GPU
+            #image_batch = image_batch.to(device)
             # process gt
             gt = split_target(gt)
-            gt = gt.to(device)
+            #gt = gt.to(device)
             # process mask
             mask = split_mask(mask)
             mask = mask.to(device)
             
-            for iter in range(1, num_iter + 1):
+            for iter in range( num_iter ):
                 
-                segmentation = network(image_batch)
-                    
-                # threshold 
-                #segmentation = torch.round(segmentation)
-                segmentation = segmentation * mask
+                #perform translation if second image
+                trans_image = affine(image_batch[0], translate=(50 * iter, 0), angle =0, shear = 0, scale = 1.0)   # translate 50 pixels for each sample, 5 samples
+                trans_image = torch.unsqueeze(trans_image, 0)
+                
+                trans_image = trans_image.to(device)
+                
+                segmentation = network(trans_image)
+                segmentation = segmentation.cpu()
+                #perform inverse translation
+                
+                segmentation = affine(segmentation[0], translate = (-50 * iter, 0), angle =0, shear = 0, scale = 1.0)
+                segmentation = torch.unsqueeze(segmentation, 0)
+                
+
+                
                 tensors.append(segmentation.detach()) # append our segmentation
                 if verbose and iter % 50 == 0:
                     print(f'\tIteration {iter}: {iter}/{num_iter}')
@@ -68,7 +128,7 @@ def test_uncertainty( network, loss_fn, dataloader, device, num_iter = 1000, use
             avg_segmentation = tensors.mean(0) # take pixel wise mean
             std_tensor = tensors.std(0) # take pixel wise std
             
-            
+            mask = mask.cpu()
             if use_mask:
                 avg_segmentation = avg_segmentation * mask # mask again, just to be safe
                 masked_gt = gt * mask
@@ -90,7 +150,7 @@ def test_uncertainty( network, loss_fn, dataloader, device, num_iter = 1000, use
           
           
             ####### PROCESS OUR TENSORS #######
-
+          
           
           
             if save:
@@ -102,8 +162,8 @@ def test_uncertainty( network, loss_fn, dataloader, device, num_iter = 1000, use
                 if not os.path.exists(im_path):
                     os.mkdir(im_path)
                 
-                #don't save all tensors for this run !~!!!~~
-                torch.save(tensors[0:25].clone(), os.path.join(im_path, 'tensors.pt'))
+                #don't save tensors for this run !~!!!~~
+                torch.save(tensors.clone(), os.path.join(im_path, 'tensors.pt'))
                 torch.save(avg_segmentation.clone(), os.path.join(im_path, 'mean_tensor.pt'))
                 torch.save(std_tensor.clone(), os.path.join(im_path, 'std_tensor.pt'))
                 save_contour_map(avg_segmentation[0], masked_gt[0], save_path=im_path)
@@ -136,7 +196,7 @@ if __name__=='__main__':
     model_depth = sort_params(['model_depth'], param_dict)['model_depth']
     
     # initialize UNet with our params
-    unet = UNet(**unet_params, dropblock_ichan = True)
+    unet = UNet(**unet_params)
     
     
     # check if GPU is available, if not, exit
@@ -150,7 +210,6 @@ if __name__=='__main__':
     
     unet.to(device) # move unet to gpu
     unet.eval() # set unet to eval mode
-    unet.apply(set_dropblock_on) # set dropblock to be on, despite being in eval mode
     
     # use validation data to determine uncertainty
     val_root = 'final_data/gray_validation/'
@@ -174,7 +233,7 @@ if __name__=='__main__':
     loss_fn = nn.BCELoss()
     
     # if new uncertainty location does not exist, make it
-    uncertainty_root = results_root + '/Dropout_MonteCarlo_dchan'
+    uncertainty_root = results_root + '/Translation_MonteCarlo'
     if not os.path.exists(uncertainty_root):
         os.mkdir(uncertainty_root)
         
@@ -183,7 +242,7 @@ if __name__=='__main__':
                      loss_fn = loss_fn,
                      dataloader = val_loader,
                      device = device,
-                     num_iter = 1000,
+                     num_iter = 5,
                      use_mask = True,
                      verbose = True,
                      save = True,
