@@ -1,1 +1,3 @@
-Change
+Learn Github with VScode and Move Unet onto the CRC server
+Write down what we have already done
+Change the research code and architecture to match a 
