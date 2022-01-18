@@ -1,3 +1,14 @@
 Learn Github with VScode and Move Unet onto the CRC server
 Write down what we have already done
 Change the research code and architecture to match a 
+
+
+Augmenter():
+
+    Goal: Easy way to handle val, test, and training data and save it somewhere else
+
+    in init have (im, gt, mask)
+
+    in save_augments(dest path, dict(im_name, gt, mask))
+
+    
