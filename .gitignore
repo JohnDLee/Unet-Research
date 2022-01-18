@@ -1,14 +1,12 @@
 # unneeded information for user/results of us running test
 **/makefile
-Unet_research/final_data/
-Unet_research/submission*/
-Unet_research/optimization_outputs/
-Unet_research/results_test1/
-Unet_research/notebooks/
+Unet_research/augmented_data*/**
+Unet_research/results*/
 Unet_research/**/*.ipynb
-*.zip
+**/*.zip
 **/*.sh
-**/!setup_requirements.sh
+**/!requirements.sh
+*.o*
 
 # extra files
 *.ipynb_checkpoints

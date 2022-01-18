@@ -12,7 +12,7 @@ import torchvision.transforms.functional as TF
 from utils.utils_general import split_target
 
 
-class CustomDataset(torch.utils.data.Dataset):
+class UnetDataset(torch.utils.data.Dataset):
 
 
   def __init__(
