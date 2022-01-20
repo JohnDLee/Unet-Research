@@ -3,10 +3,10 @@
 Unet_research/augmented_data*/**
 Unet_research/results*/
 Unet_research/**/*.ipynb
-Unet_research/**/!test.ipynb
+!Unet_research/unet_code/base_model_tests/test.ipynb
 **/*.zip
 **/*.sh
-**/!requirements.sh
+!Unet_research/requirements.sh
 *.o*
 Unet_research/lightning_logs
 Unet_research/lightning_logs/**
