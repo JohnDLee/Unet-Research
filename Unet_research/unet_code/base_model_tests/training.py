@@ -10,13 +10,13 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import Trainer, seed_everything
 import sys
-from Unet_research.unet_code.utils.utils_metrics import final_test_metrics
 
-sys.path.append(os.path.join(os.getcwd()))
+sys.path.append(os.path.join(os.getcwd(), 'unet_code'))
 
 from utils.utils_unet import UNet
 from utils.utils_modules import DropBlock2D
 from utils.utils_training import BaseUNetTraining
+from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
 
 
@@ -41,9 +41,9 @@ def training(args):
             exit(1)
     
     # get data
-    train_root = join(dest, 'train')
-    val_root = join(dest, 'val')
-    test_root = join(dest, 'test')
+    train_root = join(args.data_path, 'train')
+    val_root = join(args.data_path, 'val')
+    test_root = join(args.data_path, 'test')
 
     add_images = lambda x: join(x, 'images')
     add_targets = lambda x: join(x, 'targets')
@@ -113,15 +113,15 @@ def training(args):
                             save_top_k=1,
                             mode="min",
                             )
-    trainer = Trainer.from_argparse_args(args, callbacks = [checkpoint_callback], default_root_dir = dest)
+    trainer = Trainer.from_argparse_args(args, callbacks = [checkpoint_callback], default_root_dir = dest, max_epochs = args.num_epochs)
 
     # fit model
     trainer.fit(model, train_loader, val_loader)
 
     statistics = join(dest, 'statistics')
     os.mkdir(statistics)
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics )
-    
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
+
     
     
 
