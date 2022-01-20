@@ -1,175 +1,94 @@
-import numpy as np
-from torch.functional import split
-from torch.serialization import save
-
 import torch
+import sys
+import os
+import pytorch_lightning as pl
 
-from dropblock import DropBlock2D
+from utils.utils_unet import UNet
 
-from utils.utils_unet import Dropblock2d_ichan
-from utils.utils_general import split_target, get_masked, TensortoPIL
-from utils.utils_metrics import *
+class BaseUNetTraining(pl.LightningModule):
+    """ base training module for UNet, alter predict step for more predictions"""
 
+    def __init__(self, model, loss_fcn, optimizer):
+        super().__init__()
+        self._model = model
+        self._loss_fcn = loss_fcn
+        self._optimizer = optimizer
 
-def set_dropblock_on(layer):
-    ''' sets dropblock to be in training mode '''
-    if type(layer) == DropBlock2D or type(layer) == Dropblock2d_ichan:
-        layer.training = True
-
-# training epoch
-def train_epoch(epoch, network, optimizer, loss_fn, dataloader, device,use_mask = True, debug = False, verbose = False):
     
-    if verbose:
-        print(f"\nTrain Epoch {epoch}")
-    # turn training mode on
-    network.train()
-    losses = []
-    for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
-      
-        # move images to device
-        image_batch = image_batch.to(device)
-        if debug:
-            print('After Image Batch:\n',torch.cuda.memory_summary(device))
-        
-        segmentation = network(image_batch)
-        if debug:
-            print('After Model Segmentation:\n',torch.cuda.memory_summary(device))
-        
-        # process gt
-        gt = split_target(gt) # split the target
-        gt = gt.to(device)
-        if debug:
-            print('After GT:\n',torch.cuda.memory_summary(device))
-        
-        # multiply both segmentation and gt by mask
-        if use_mask:
-            segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
-        if debug:
-            print('After Mask:\n',torch.cuda.memory_summary(device))
-        
-        loss = loss_fn(segmentation, gt)
-
-        # multiply by size of tensor, divide by number of pixels that are 1 in the mask
-        if use_mask:
-          loss *= (segmentation.numel() / mask.count_nonzero())
-        if debug:
-            print('After Loss Recalculation:\n',torch.cuda.memory_summary(device))
-
-        #backprop
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-        if debug:
-            print('After Backpropogation:\n',torch.cuda.memory_summary(device))
-            
-        # get info
-        #logger.info(f'\tBatch {batch_idx + 1}/{len(dataloader)}: loss - {loss}')
-        losses.append(loss.item())
-        
-        # if verbose = True, print a message
-        if verbose:
-            print(f'\tBatch {batch_idx + 1}/{len(dataloader)}: loss = {losses[-1]}')
-        
-        del segmentation, gt, mask, loss
-        
-        torch.cuda.empty_cache() # clear GPU
-        
-        if debug:
-            print('After Clean:\n', torch.cuda.memory_summary(device))
-  
+    def forward(self, x):
+        return self._model(x)
     
-  
-    return np.array(losses).mean()
+    def training_step(self, batch, batch_idx):
+        im_batch, gt, mask = batch
+        im_batch.requires_grad=True
 
+        segmentation = self._model(im_batch)
 
-# validation epoch
-def val_epoch(epoch, network, loss_fn, dataloader, device, use_mask = True, verbose = False):
-
-    if verbose:
-        print(f"\nVal Epoch {epoch}")
-    # set to evaluation mode
-    network.eval()
-    losses = []
-    with torch.no_grad():
-        for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
+        # mask
+        segmentation = segmentation * mask
+        gt = gt * mask
         
-            image_batch = image_batch.to(device)
-            
-            segmentation = network(image_batch)
-            
-            
-            # process gt
-            gt = split_target(gt)
-            gt = gt.to(device)
-
-            
-            # if using masks, only get region with mask
-            if use_mask:
-                segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
-
-            #get orig image and segmentation
-            loss = loss_fn(segmentation, gt)
-            
-            # multiply by total pixels and divide by number of 1 pixels in mask
-            if use_mask:
-              loss *= (segmentation.numel() / mask.count_nonzero())
-            
-            losses.append(loss.item()) # save losses
-            
-            if verbose:
-                print(f'\tBatch {batch_idx + 1}/{len(dataloader)}: validation loss = {losses[-1]}')
-          
-            del segmentation, gt, mask, loss
-            torch.cuda.empty_cache() # clear GPU
-
-    return np.array(losses).mean()
-
-
-# validation epoch
-def val_epoch_dropblock(epoch, network, loss_fn, dataloader, device, use_mask = True, verbose = False):
-
-    if verbose:
-        print(f"\nVal Epoch {epoch}")
-    # set to evaluation mode
-    network.eval()
-    network.apply(set_dropblock_on) # set dropblock to be on when calculating val loss
-    losses = []
-    with torch.no_grad():
-        for batch_idx, (image_batch, gt, mask) in enumerate(dataloader):
+        loss = self._loss_fcn(segmentation, gt)
+        # recalculate loss based on mask
+        loss *= (segmentation.numel() / mask.count_nonzero())
         
-            image_batch = image_batch.to(device)
-            
-            segmentation = network(image_batch)
-            
-            
-            # process gt
-            gt = split_target(gt)
-            gt = gt.to(device)
+        # log every 10
+        if batch_idx % 10:
+            self.log('train_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
+        
+        return loss
 
-            
-            # if using masks, only get region with mask
-            if use_mask:
-                segmentation, gt, mask = get_masked(segmentation, gt, mask, device)
-
-            #get orig image and segmentation
-            loss = loss_fn(segmentation, gt)
-            
-            # multiply by total pixels and divide by number of 1 pixels in mask
-            if use_mask:
-              loss *= (segmentation.numel() / mask.count_nonzero())
-            
-            losses.append(loss.item()) # save losses
-            
-            if verbose:
-                print(f'\tBatch {batch_idx + 1}/{len(dataloader)}: validation loss = {losses[-1]}')
-          
-            del segmentation, gt, mask, loss
-            torch.cuda.empty_cache() # clear GPU
-
-    return np.array(losses).mean()
-
-  
+    def trian_epoch_end(self, train_step_outputs):
+        """ return avg val at end"""
+        all_preds = torch.stack(train_step_outputs)
+        
+        avg_loss = all_preds.mean()
+        self.log('train_loss_avg', avg_loss.item() )
 
 
+    def validation_step(self, batch, batch_idx):
+        im_batch, gt, mask = batch
 
+        segmentation = self._model(im_batch)
 
+        # mask
+        segmentation = segmentation * mask
+        gt = gt * mask
+        
+        loss = self._loss_fcn(segmentation, gt)
+        # recalculate loss based on mask
+        loss *= (segmentation.numel() / mask.count_nonzero())
+        
+        # log each one
+        self.log('val_loss', loss, logger=True,)
+        
+        return loss
+    
+    def validation_epoch_end(self, validation_step_outputs):
+        """ return avg val at end"""
+        all_preds = torch.stack(validation_step_outputs)
+        
+        avg_loss = all_preds.mean()
+        self.log('val_loss_avg', avg_loss.item(), logger = True )
+
+    def configure_optimizers(self):
+        return self._optimizer
+
+    def test_step(self, batch, batch_idx):
+        im_batch, _,  mask = batch
+
+        segmentation = self._model(im_batch)
+
+        # mask
+        segmentation = segmentation * mask
+ 
+        return segmentation
+    
+    def predict_step(self, batch, batch_idx):
+        im_batch, gt, mask = batch
+        segmentation = self._model(im_batch)
+
+        segmentation = segmentation * mask
+        
+        return batch_idx, segmentation, im_batch, gt
+    

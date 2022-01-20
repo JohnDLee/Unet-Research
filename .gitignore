@@ -1,12 +1,17 @@
 # unneeded information for user/results of us running test
-**/makefile
+**/Makefile
 Unet_research/augmented_data*/**
 Unet_research/results*/
 Unet_research/**/*.ipynb
+Unet_research/**/!test.ipynb
 **/*.zip
 **/*.sh
 **/!requirements.sh
 *.o*
+Unet_research/lightning_logs
+Unet_research/lightning_logs/**
+
+
 
 # extra files
 *.ipynb_checkpoints

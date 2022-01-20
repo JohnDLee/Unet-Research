@@ -13,7 +13,7 @@ import shutil
 
 from utils.utils_dataset import *
 from utils.utils_unet import *
-from utils.utils_training import *
+from Unet_research.unet_code.utils.utils_training_old import *
 from utils.utils_metrics import *
 from utils.utils_file_handler import *
 

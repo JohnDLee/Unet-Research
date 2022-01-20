@@ -10,7 +10,7 @@ if __name__=='__main__':
         fp.write('[model_params]\n')
         fp.write('init_channels=1\n')
         fp.write('filters=64\n')
-        fp.write('output_channels=2\n')
+        fp.write('output_channels=1\n')
         fp.write('model_depth=4\n')
         fp.write('pool_mode=max\n')
         fp.write('up_mode=upconv\n')
