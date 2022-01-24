@@ -1,21 +1,8 @@
 import torch
 from torchvision import transforms
+import os
+from os.path import join, exists
 
-
-def split_target(target):
-    ''' splits our gt into [class0, class1] by inversing'''
-    return torch.cat([target, 1-target], dim = 1)
-
-def split_mask(mask):
-    return torch.cat([mask, mask], dim = 1)
-
-def get_masked(segmentation, gt, mask, device):
-    ''' creates a mask for our data'''
-    new_mask = torch.cat([mask, mask], dim = 1)
-
-    new_mask = new_mask.to(device)
-    
-    return new_mask * segmentation, new_mask * gt, new_mask
 
 
 def toPIL(tensor, mode = None):
@@ -23,7 +10,20 @@ def toPIL(tensor, mode = None):
     topil = transforms.ToPILImage(mode)
     return topil(tensor)
    
-    
 
+def create_dir(path):
+    ''' tries to create a directory 5 times otherwise fails'''
+    dir = path
+    if not exists(dir):
+        os.mkdir(dir)
+    else:
+        for i in range(6):
+            dir = path + str(i)
+            if not exists(dir):
+                os.mkdir(dir)
+                break
+        else:
+            print("Could not create directory.")
+            return None
     
-    
+    return dir

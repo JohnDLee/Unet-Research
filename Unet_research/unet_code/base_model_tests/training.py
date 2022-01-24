@@ -1,4 +1,3 @@
-from re import U
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -19,6 +18,7 @@ from utils.utils_modules import DropBlock2D
 from utils.utils_training import BaseUNetTraining
 from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
+from utils.utils_general import create_dir
 
 class UNetTraining(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
@@ -58,18 +58,9 @@ def testing(args):
         seed_everything(args.seed, workers = True)
 
     # create new statistics folder if exists
-    stats = args.save_path
-    if not exists(stats):
-        os.mkdir(stats)
-    else:
-        for i in range(6):
-            stats = args.save_path + str(i)
-            if not exists(stats):
-                os.mkdir(stats)
-                break
-        else:
-            print("Could not create directory.")
-            exit(1)
+    stats = create_dir(args.save_path)
+    if stats is None: # failed
+        exit(1)
     
 
     # get data
@@ -121,7 +112,7 @@ def testing(args):
     unet.set_normalization(nn.GroupNorm, params = {'num_groups': 32, 'num_channels':"fill"})
     unet.create_model()
 
-        # loss function
+    # loss function
     loss_fn = nn.BCELoss()
 
     # Load Training Lightning Module 
@@ -142,18 +133,9 @@ def training(args):
         seed_everything(args.seed, workers = True)
 
     # create destination
-    dest = args.save_path
-    if not exists(dest):
-        os.mkdir(dest)
-    else:
-        for i in range(6):
-            dest = args.save_path + str(i)
-            if not exists(dest):
-                os.mkdir(dest)
-                break
-        else:
-            print("Could not create directory.")
-            exit(1)
+    dest = create_dir(args.save_path)
+    if dest is None: # failed
+        exit(1)
     
     # get data
     train_root = join(args.data_path, 'train')
