@@ -9,8 +9,9 @@ from PIL import Image
 import torch
 import sklearn.metrics as metrics
 from torch.utils.data import DataLoader
-
+from zipfile import ZipFile
 from utils.utils_general import toPIL
+import shutil
 
 def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path = None):
     
@@ -30,11 +31,11 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
         os.mkdir(val_folder)
 
     train_losses=[]
-    if 'train_loss_avg' in trainer.logged_metrics:
-        train_losses = trainer.logged_metrics["train_loss_avg"]
+    if 'train_loss_epoch' in trainer.logged_metrics:
+        train_losses = trainer.logged_metrics["train_loss_epoch"]
     val_losses=[]
-    if 'val_loss_avg' in trainer.logged_metrics:
-        val_losses = trainer.logged_metrics["val_loss_avg"]
+    if 'val_loss_epoch' in trainer.logged_metrics:
+        val_losses = trainer.logged_metrics["val_loss_epoch"]
 
     # save losses
     
@@ -81,7 +82,8 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
     # preserve memory
     del test_data
 
-    
+    shutil.make_archive('submissions', format = 'zip', root_dir=test_folder,base_dir='segmentations')
+
     # val data to just 1 image per batch
     val_dataloader = DataLoader(val_dataloader.dataset, batch_size = 1, shuffle = False)
     # save val outputs
@@ -194,20 +196,18 @@ def save_contour_map(segmentation, gt, save_path = '.'):
     ''' creates and saves a contour map between a segmentation and gt to observe class mismatches'''
 
     def get_diff(segmentation_class, gt_class):
-        
         # find distance between segmentation and gt
         segmentation_class = torch.round(segmentation_class) # round to either 0 or 1 for 50% threshold
         # get a diverging difference
-        diff = 2 * (segmentation_class - gt_class) / (torch.abs(segmentation_class) + torch.abs(gt_class))
-        
+        diff = 2 * (segmentation_class - gt_class) / torch.clamp((torch.abs(segmentation_class) + torch.abs(gt_class)), min = 0.000001)
         return diff
 
     
     fig, (ax1) = plt.subplots(1, 1, figsize = (10, 10))
     
     # create vessel class
-    diff1 = get_diff(segmentation, gt)
-    div1_map = ax1.imshow(toPIL(diff1), cmap = cm.seismic)
+    diff1 = get_diff(segmentation[0], gt[0])
+    div1_map = ax1.imshow(diff1, cmap = cm.seismic)
     fig.colorbar(div1_map, ax = ax1)
     ax1.set_title('Divergence Map Vessel Segmentation', fontsize = 12)
     
@@ -222,7 +222,7 @@ def save_overlap_map(segmentation, gt, save_path = '.'):
     fig, ax = plt.subplots(1, 1, figsize = (10, 8))
     
     # create numpy arrays of thresholded value
-    mask = torch.round(segmentation).numpy()
+    mask = torch.round(segmentation[0]).numpy()
     # create mask
     masked = np.ma.masked_where(mask == 0, mask)
     
@@ -236,7 +236,7 @@ def save_overlap_map(segmentation, gt, save_path = '.'):
     
     # create vessel class
     ax.imshow(toPIL(gt), cmap = 'gray')
-    ax.imshow(toPIL(torch.from_numpy(masked)), cmap = LinearSegmentedColormap('custom_cmap', cdict), alpha = .9)
+    ax.imshow(masked, cmap = LinearSegmentedColormap('custom_cmap', cdict), alpha = .9)
     ax.set_title('Overlap Vessel Segmentation', fontsize = 12)
     # save figure
     fig.savefig(join(save_path, 'overlap_map.png'))
@@ -253,7 +253,7 @@ def save_test_example(image, segmentation, id, save_path):
     # base image
     axes[0].imshow(toPIL(image), cmap = 'gray') # plain image
     axes[0].set_title("Base Image")
-    axes[1].imshow(toPIL(segmentation), cmap = 'gray', vmin = 0, vmax = 1) # first class
+    axes[1].imshow(toPIL(segmentation), cmap = 'gray',) # first class
     axes[1].set_title("Vessel Segmentation")
     fig.suptitle(f'Test Image {id}')
     
@@ -262,7 +262,7 @@ def save_test_example(image, segmentation, id, save_path):
 
 def save_segmentation(segmentation, id, save_path):
     """save segmentation alone as a binary png"""
-    toPIL(segmentation).convert('L').save(join(save_path, f'{id}.png'))
+    toPIL(torch.round(segmentation)).convert('L').save(join(save_path, f'{id}.png'))
 
 
 def save_val_example(image, segmentation, gt, id, save_path):
@@ -275,9 +275,9 @@ def save_val_example(image, segmentation, gt, id, save_path):
     # base image
     axes[0].imshow(toPIL(image), cmap = 'gray') # plain image
     axes[0].set_title("Base Image")
-    axes[1].imshow(toPIL(segmentation), cmap = 'gray', vmin = 0, vmax = 1) # first class
+    axes[1].imshow(toPIL(segmentation), cmap = 'gray') # first class
     axes[1].set_title("Vessel Segmentation")
-    axes[2].imshow(toPIL(gt), cmap = 'gray', vmin = 0, vmax = 1) # first class
+    axes[2].imshow(toPIL(gt), cmap = 'gray') # first class
     axes[2].set_title("Vessel Ground Truth")
     fig.suptitle(f'Val Image {id}')
     

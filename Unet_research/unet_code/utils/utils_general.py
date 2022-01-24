@@ -18,9 +18,9 @@ def get_masked(segmentation, gt, mask, device):
     return new_mask * segmentation, new_mask * gt, new_mask
 
 
-def toPIL(tensor):
+def toPIL(tensor, mode = None):
     ''' takes a tensor of [C, W, H] and converts it to PIL Image'''
-    topil = transforms.ToPILImage()
+    topil = transforms.ToPILImage(mode)
     return topil(tensor)
    
     

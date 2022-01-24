@@ -38,13 +38,6 @@ class BaseUNetTraining(pl.LightningModule):
         
         return loss
 
-    def trian_epoch_end(self, train_step_outputs):
-        """ return avg val at end"""
-        all_preds = torch.stack(train_step_outputs)
-        
-        avg_loss = all_preds.mean()
-        self.log('train_loss_avg', avg_loss.item() )
-
 
     def validation_step(self, batch, batch_idx):
         im_batch, gt, mask = batch
@@ -60,16 +53,8 @@ class BaseUNetTraining(pl.LightningModule):
         loss *= (segmentation.numel() / mask.count_nonzero())
         
         # log each one
-        self.log('val_loss', loss, logger=True,)
-        
+        self.log('val_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
         return loss
-    
-    def validation_epoch_end(self, validation_step_outputs):
-        """ return avg val at end"""
-        all_preds = torch.stack(validation_step_outputs)
-        
-        avg_loss = all_preds.mean()
-        self.log('val_loss_avg', avg_loss.item(), logger = True )
 
     def configure_optimizers(self):
         return self._optimizer

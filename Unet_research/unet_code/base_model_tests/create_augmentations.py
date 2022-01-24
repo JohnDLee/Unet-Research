@@ -38,8 +38,8 @@ def gen_tests(dest: str, num: int, loader: ImLoader, transformation: A.Compose):
         transformed = transformation(image = im, # should be basically an identity
                                         mask = mask)
 
-        Image.fromarray(transformed['image']).save(join(im_path, f'{count}_image.png'))
-        Image.fromarray(transformed['mask']).save(join(mask_path, f'{count}_mask.png'))
+        Image.fromarray(transformed['image']).save(join(im_path, f'{str(count).zfill(2)}_image.png'))
+        Image.fromarray(transformed['mask']).save(join(mask_path, f'{str(count).zfill(2)}_mask.png'))
         count+= 1
         pbar.update(1)
         
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     
     # create folders inside
     train_dest = join(dest, 'train')
-    val_orig_dest = join(dest, 'val_orig') # original validations
+    val_orig_dest = join(dest, 'val') # original validations
     val_aug_dest = join(dest, 'val_aug') # augmented validations
     test_dest = join(dest, 'test')
 

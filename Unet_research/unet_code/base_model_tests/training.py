@@ -1,3 +1,4 @@
+from re import U
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -7,7 +8,7 @@ from PIL import Image #image reader
 import numpy as np
 import argparse
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import Trainer, seed_everything
 import sys
 
@@ -19,11 +20,125 @@ from utils.utils_training import BaseUNetTraining
 from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
 
+class UNetTraining(BaseUNetTraining):
+    """ base training module for UNet, alter predict step for more predictions"""
+
+    def __init__(self, model, loss_fcn, lr, momentum):
+        super(UNetTraining, self).__init__(model, loss_fcn, optimizer = None)
+        self.lr = lr
+        self.momentum = momentum
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(params = self._model.parameters(), lr = self.lr, momentum =self.momentum )
+        lr_scheduler_config = {
+            'scheduler' :  torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
+                            mode='min',
+                            factor=0.1,
+                            patience=3,
+                            threshold=0.001,
+                            threshold_mode='rel', 
+                            cooldown=0,
+                            min_lr=0,
+                            eps=1e-08,
+                            verbose=False),
+            'interval': 'epoch',
+            'frequency': 1,
+            'monitor': 'val_loss_avg',
+            'strict': True,
+            'name': None,
+        }
+        return {'optimizer': optimizer,
+                'lr_scheduler': lr_scheduler_config }
+
+
+def testing(args):
+
+    # seed
+    if args.seed != -1:
+        seed_everything(args.seed, workers = True)
+
+    # create new statistics folder if exists
+    stats = args.save_path
+    if not exists(stats):
+        os.mkdir(stats)
+    else:
+        for i in range(6):
+            stats = args.save_path + str(i)
+            if not exists(stats):
+                os.mkdir(stats)
+                break
+        else:
+            print("Could not create directory.")
+            exit(1)
+    
+
+    # get data
+    val_root = join(args.data_path, 'val')
+    test_root = join(args.data_path, 'test')
+
+    add_images = lambda x: join(x, 'images')
+    add_targets = lambda x: join(x, 'targets')
+    add_masks = lambda x: join(x, 'masks')
+
+    # datasets
+    val_dataset = UnetDataset(image_root=add_images(val_root),
+                                target_root=add_targets(val_root),
+                                mask_root=add_masks(val_root),
+                                mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
+    test_dataset = UnetDataset(image_root=add_images(test_root),
+                            mask_root = add_masks(test_root),
+                                mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
+
+    val_batch_size = 1
+    test_batch_size = 1
+
+    # load into dataloaders
+    val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=os.cpu_count())
+    test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=os.cpu_count())
+
+    # set up Unet 
+    unet = UNet(init_channels=1,
+                filters=64,
+                output_channels=1,
+                model_depth=4,
+                pool_mode='max',
+                up_mode='upconv',
+                connection='cat',
+                same_padding=True,
+                conv_layers_per_block=2,
+                checkpointing=True
+                )
+
+    unet.set_activation_function(nn.ReLU())
+    # Default Dropblock because it should be turned off anyways
+    unet.set_dropblock(DropBlock2D,
+                        block_size = args.block_size,
+                        drop_prob=args.max_drop_prob,
+                        use_scheduler=True,
+                        start_drop_prob=0,
+                        max_drop_prob=args.max_drop_prob,
+                        dropblock_ls_steps=args.dropblock_steps)
+    unet.set_normalization(nn.GroupNorm, params = {'num_groups': 32, 'num_channels':"fill"})
+    unet.create_model()
+
+        # loss function
+    loss_fn = nn.BCELoss()
+
+    # Load Training Lightning Module 
+    model = UNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum)
+
+    # call Trainer
+    trainer = Trainer.from_argparse_args(args, logger = False)
+    
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
+
+
+
 
 def training(args):
 
     # seed
-    if args.seed is not None:
+    if args.seed != -1:
         seed_everything(args.seed, workers = True)
 
     # create destination
@@ -32,7 +147,7 @@ def training(args):
         os.mkdir(dest)
     else:
         for i in range(6):
-            dest = dest + str(i)
+            dest = args.save_path + str(i)
             if not exists(dest):
                 os.mkdir(dest)
                 break
@@ -67,11 +182,11 @@ def training(args):
     test_batch_size = 1
 
     # load into dataloaders
-    train_loader = DataLoader(train_dataset, batch_size = train_batch_size,shuffle=True, drop_last=False, num_workers=2) 
-    val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=2)
-    test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size = train_batch_size,shuffle=True, drop_last=False, num_workers=os.cpu_count()) 
+    val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=os.cpu_count())
+    test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=os.cpu_count())
 
-    unet = UNet(init_channels=args.input_channels,
+    unet = UNet(init_channels=1,
                 filters=64,
                 output_channels=1,
                 model_depth=4,
@@ -91,16 +206,14 @@ def training(args):
                         start_drop_prob=0,
                         max_drop_prob=args.max_drop_prob,
                         dropblock_ls_steps=args.dropblock_steps)
-    unet.set_normalization(nn.GroupNorm, params = {'num_groups':32, 'num_channels':"fill"})
+    unet.set_normalization(nn.GroupNorm, params = {'num_groups': 32, 'num_channels':"fill"})
     unet.create_model()
 
     # loss function
     loss_fn = nn.BCELoss()
 
-    # optimizer
-    optimizer = torch.optim.SGD(params = unet.parameters(), lr = args.lr,momentum =args.momentum )
-
-    model = BaseUNetTraining(unet, loss_fcn=loss_fn, optimizer = optimizer )
+    # Training Lightning Module
+    model = UNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum)
 
 
     model_info = join(dest, 'model_info')
@@ -108,16 +221,27 @@ def training(args):
 
     checkpoint_callback = ModelCheckpoint(
                             monitor="val_loss_avg",
-                            dirpath=dest,
+                            dirpath=model_info,
                             filename="model-{epoch:02d}-{val_loss:.2f}",
                             save_top_k=1,
                             mode="min",
                             )
-    trainer = Trainer.from_argparse_args(args, callbacks = [checkpoint_callback], default_root_dir = dest, max_epochs = args.num_epochs)
+    early_stopping_callback = EarlyStopping(
+                            monitor = 'val_loss_avg',
+                            min_delta = 0.0, 
+                            patience = 10, # after 10 epochs, just exit
+                            mode = 'min'
+                            )
+    trainer = Trainer.from_argparse_args(args, callbacks = [checkpoint_callback, early_stopping_callback], default_root_dir = dest, max_epochs = args.num_epochs, auto_lr_find=True)
+
+    # find optimal lr
+    trainer.tune(model, train_loader, val_loader)
 
     # fit model
     trainer.fit(model, train_loader, val_loader)
 
+    # load best model
+    model.load_from_checkpoint(model_info)
     statistics = join(dest, 'statistics')
     os.mkdir(statistics)
     final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
@@ -131,20 +255,29 @@ def training(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
+    
+
+    # training info
+    parser.add_argument('-mode', dest = 'mode', type = str, required = True, help = 'Mode: Train or Test')
+    parser.add_argument('-model_path', dest = 'model_path', type = str, help = 'If Mode = Test, path containing a previously trained model checkpoint. Nonoperational for mode=Train')
     parser.add_argument('-data_path', dest = 'data_path', required=True, help = 'Datapath containing augmented data. Must contain a train, val, test folder which each have images, (targets), and masks')
-    parser.add_argument('-save_path', dest = 'save_path', required = True, help = 'Path to save folder. Should be Nonexistent, but will created a duplicate save_path_X for X = 1-5 if it does.')
-    parser.add_argument('-input_channels', dest = 'input_channels', default = 1, type = int, help = 'Number of Input channels. 1 for Grayscale images, 3 for RGB.')
-    parser.add_argument('-num_epochs', dest = 'epochs', type = int, default = 50, help = 'Number of Max epochs to run. Defaults to 50')
+    parser.add_argument('-save_path', dest = 'save_path', required = True, help = 'Path to save folder. If Mode = Train, Should be Nonexistent, but will created a duplicate save_path_X for X = 1-5 if it does. If Mode: Test, this folder should be the folder you would like to save statistics in.')
+    parser.add_argument('-num_epochs', dest = 'num_epochs', type = int, default = 50, help = 'Number of Max epochs to run. Defaults to 50')
     parser.add_argument('-train_batch', dest = 'train_batch', type = int, default = 1, help = 'Training batch size. Defaults to 1')
     parser.add_argument('-val_batch', dest = 'val_batch', type = int, default = 1, help = 'Validation batch size. Defaults to 1')
-    parser.add_argument('-lr', dest = 'lr', type = float, default = .001, help = 'Optimizer Learning Rate. Defaults to .001')
+    parser.add_argument('-lr', dest = 'lr', type = float, default = .001, help = 'Optimizer starting Learning Rate. However, will be optimized by Pytorch Lightning. Defaults to .001')
     parser.add_argument('-momentum', dest = 'momentum', type = float, default = .99, help = 'Momentum the Optimizer will use. Defaults to .99')
     parser.add_argument('-block_size', dest = 'block_size', type = int, default = 7, help = 'Block size of dropblock, which must be odd numbers. A size of 1 is equivalent to dropout. Defaults to 7.')
     parser.add_argument('-max_drop_prob',dest = 'max_drop_prob', type = float, default = .15, help = 'Maximum drop probability of dropblock, must be from 0-1. Defaults to .15')
     parser.add_argument('-dropblock_steps', dest = 'dropblock_steps', type = int, default = 1500, help = 'Number of steps before max drop prob is reached. Defaults to 1500')
-    parser.add_argument('-seed', dest = 'seed', type = int, default = None, help = 'Seed for reproducability. Defaults to None' )
+    parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )
     parser = Trainer.add_argparse_args(parser)
 
-    args = parser.parse_args()
+    # testing info
 
-    training(args)
+    args = parser.parse_args()
+    
+    if args.mode == 'train':
+        training(args)
+    elif args.mode == 'test':
+        testing(args)
