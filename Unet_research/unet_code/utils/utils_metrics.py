@@ -82,8 +82,6 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
     # preserve memory
     del test_data
 
-    shutil.make_archive('submissions', format = 'zip', root_dir=test_folder,base_dir='segmentations')
-
     # val data to just 1 image per batch
     val_dataloader = DataLoader(val_dataloader.dataset, batch_size = 1, shuffle = False)
     # save val outputs
