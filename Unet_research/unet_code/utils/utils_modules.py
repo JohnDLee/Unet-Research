@@ -36,8 +36,8 @@ class DropBlock2D(nn.Module):
     def forward(self, x):
         # shape: (bsize, channels, height, width)
 
-        assert x.dim() == 4, \
-            "Expected input with 4 dimensions (bsize, channels, height, width)"
+        #assert x.dim() == 4, \
+        #    "Expected input with 4 dimensions (bsize, channels, height, width)"
 
         if not self.training or self.drop_prob == 0.:
             return x
@@ -46,14 +46,13 @@ class DropBlock2D(nn.Module):
             gamma = self._compute_gamma(x)
 
             # sample mask
-            mask_center = (torch.rand(x.shape[0], x.shape[1], x.shape[2] - self.block_size + 1, x.shape[3] - self.block_size + 1) < gamma).float()
+            mask_center = (torch.rand(x.shape[0], x.shape[1], x.shape[2] - self.block_size + 1, x.shape[3] - self.block_size + 1, device = x.device) < gamma).float()
             
             mask = (nn.ZeroPad2d(self.block_size // 2))(mask_center)
             if self.block_size % 2 == 0:
                 mask = mask[:, :, :-1, :-1]
-                
-            # place mask on input device
-            mask = mask.to(x.device)
+
+            # modified so the mask is created on the correct device, instead of moving to it.
 
             # compute block mask
             block_mask = self._compute_block_mask(mask)

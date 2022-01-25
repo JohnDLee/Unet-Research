@@ -18,43 +18,28 @@ from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
 from utils.utils_general import create_dir, toPIL
 
-class RotationEval(BaseUNetTraining):
+class ResizeEval(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, num_iterations = 1000, return_num = 25):
+    def __init__(self, model, height=128, width=128):
         """return_num decides how many tensor to return during MonteCarlo Dropblock prediction per prediction. Max is num_iterations.
         Beware memory issues.
         """
-        super(RotationEval, self).__init__(model, loss_fcn=None, optimizer = None)
-        self.num_iterations = num_iterations
-        if return_num > num_iterations:
-            self.return_num = num_iterations
-        else:
-            self.return_num = return_num
-
+        super(ResizeEval, self).__init__(model, loss_fcn=None, optimizer = None)
+        self.height = height
+        self.width= width
 
     def predict_step(self, batch, batch_idx):
         im, gt, mask = batch
 
-        runs = []
-        for iter in range(1, self.num_iterations+1):
-
-            # perform rotation transformation (assumes singular batch)
-            rot_image = TF.rotate(im, angle = iter, interpolation=TF.InterpolationMode.BILINEAR, fill = 0)
-
-            segmentation = self._model(rot_image)
-
-            segmentation = TF.rotate(segmentation, angle = -iter, interpolation = TF.InterpolationMode.BILINEAR, fill = 0)
-            runs.append((segmentation * mask))
-            del rot_image
+        # perform resize on the fly
+        resize_image = TF.resize(im, size = (self.height, self.width))
+        resize_gt = TF.resize(gt, size = (self.height, self.width))
+        resize_mask = TF.resize(mask, size = (self.height, self.width))
+        segmentation = self._model(resize_image)
+        segmentation = segmentation * resize_mask
         
-        # run num_iter times
-        tensors = torch.vstack(runs)
-
-        mean = tensors.mean(0)
-        std = tensors.std(0)
-
-        return batch_idx, (mean, std, tensors[0:self.return_num].clone())
+        return batch_idx, segmentation, resize_image, resize_gt
         
 
 
@@ -88,11 +73,16 @@ def test_uncertainty(args):
                                 target_root=add_targets(val_root),
                                 mask_root=add_masks(val_root),
                                 mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
+    test_dataset = UnetDataset(image_root=add_images(test_root),
+                            mask_root = add_masks(test_root),
+                                mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
 
     val_batch_size = 1
+    test_batch_size = 1
 
     # load into dataloaders
     val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=os.cpu_count())
+    test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=os.cpu_count())
 
     # set up Unet 
     unet = UNet(init_channels=1,
@@ -108,30 +98,24 @@ def test_uncertainty(args):
                 )
 
     unet.set_activation_function(nn.ReLU())
-    # no dropblock. doesn't matter because it will be empty
+    # default dropblock. doesn't matter because it will not be used
+    unet.set_dropblock(DropBlock2D,
+                    block_size =7,
+                    drop_prob=.15,
+                    use_scheduler=True,
+                    start_drop_prob=0,
+                    max_drop_prob=.15,
+                    dropblock_ls_steps=1500)
     unet.set_normalization(nn.GroupNorm, params = {'num_groups': 32, 'num_channels':"fill"})
     unet.create_model()
 
     # Load Training Lightning Module 
-    model = RotationEval.load_from_checkpoint(args.model_path, model=unet, num_iterations = 359, return_num = args.save_num )
+    model = ResizeEval.load_from_checkpoint(args.model_path, model=unet, height = args.height, width = args.width )
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
 
-    # prediction
-    mc_data = trainer.predict(model, dataloaders= [val_loader])
-    
-    # save our predictions (Evaluation elsewhere)
-    for im_id, (mean, std, tensors) in mc_data:
-        # create new dirs to save tensors
-        im_dir = join(stats, f'image_{im_id}')
-        os.mkdir(im_dir)
-
-        # save data
-        torch.save(mean, join(im_dir, 'mean.pt'))
-        torch.save(std, join(im_dir, 'std.pt'))
-        torch.save(tensors, join(im_dir, 'tensors.pt'))
-
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -140,7 +124,8 @@ if __name__ == '__main__':
     parser.add_argument('-model_path', dest = 'model_path', required = True, type = str, help = 'Path containing a previously trained model checkpoint.')
     parser.add_argument('-data_path', dest = 'data_path', required=True, help = 'Datapath containing augmented data. Must contain a val, test folder which each have images, (targets), and masks')
     parser.add_argument('-save_path', dest = 'save_path', required = True, help = 'Path to save folder. Should be Nonexistent, but will created a duplicate save_path_X for X = 1-5 if it does.')
-    parser.add_argument('-save_num', dest = 'save_num', type = int, default = 0, help = 'Number of tensors from MonteCarlo to save. Beware memory issues.')
+    parser.add_argument('-height', dest = 'height', type = int, default = 585, help = 'height to resize images to on the fly. Default is 585 (original size of Drive Dataset)')
+    parser.add_argument('-width', dest = 'width', type = int, default = 564, help = 'width to resize images to on the fly. Default is 564 (original size of Drive Dataset)')
     parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )
     parser = Trainer.add_argparse_args(parser)
 

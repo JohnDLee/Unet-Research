@@ -8,12 +8,12 @@ import numpy as np
 import argparse
 from pytorch_lightning import Trainer, seed_everything
 import sys
+import pdb
 
 sys.path.append(os.path.join(os.getcwd(), 'unet_code'))
 from utils.utils_unet import UNet
 from utils.utils_modules import DropBlock2D, Dropblock2d_ichan
 from utils.utils_training import BaseUNetTraining
-from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
 from utils.utils_general import create_dir
 
@@ -40,7 +40,7 @@ class DropBlockEval(BaseUNetTraining):
     def predict_step(self, batch, batch_idx):
         im, gt, mask = batch
         self._model.apply(set_dropblock_on) # turn on dropblocks
-
+        
         # run num_iter times
         tensors = torch.vstack([(self._model(im) * mask).unsqueeze(0) for _ in range(self.num_iterations)])
 
@@ -70,7 +70,6 @@ def test_uncertainty(args):
 
     # get data
     val_root = join(args.data_path, 'val')
-    test_root = join(args.data_path, 'test')
 
     add_images = lambda x: join(x, 'images')
     add_targets = lambda x: join(x, 'targets')
