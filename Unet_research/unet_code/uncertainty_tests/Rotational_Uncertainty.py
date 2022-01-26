@@ -45,7 +45,7 @@ class RotationEval(BaseUNetTraining):
             segmentation = self._model(rot_image)
 
             segmentation = TF.rotate(segmentation, angle = -iter, interpolation = TF.InterpolationMode.BILINEAR, fill = 0)
-            runs.append((segmentation * mask))
+            runs.append((segmentation * mask).unsqueeze(0))
             del rot_image
         
         # run num_iter times

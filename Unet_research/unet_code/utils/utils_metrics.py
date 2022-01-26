@@ -13,7 +13,7 @@ from zipfile import ZipFile
 from utils.utils_general import toPIL
 import shutil
 
-def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path = None):
+def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path = None, disable_test = False):
     
     
     # setup save folders
@@ -48,39 +48,41 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
                         val_losses=val_losses,
                         save_path=loss_folder)
     print("Saved Losses")
-    # test data to just 1 image per batch
-    test_dataloader = DataLoader(test_dataloader.dataset, batch_size = 1, shuffle = False)
-    # save test outputs
-    test_data = trainer.predict(model, dataloaders = [test_dataloader])
-
-    # segmentation images folder
-    test_segmentations = join(test_folder, 'segmentations')
-    if not exists(test_segmentations):
-        os.mkdir(test_segmentations)
-    test_examples = join(test_folder, 'examples')
-    if not exists(test_examples):
-        os.mkdir(test_examples)
-
-    for im_id, seg, im, _, in test_data:
-        
-        # unbatch seg. & image
-        im = im[0]
-        seg = seg[0]
-        im_id += 1
-        # save a comparison
-        save_test_example(image=im,
-                        segmentation=seg,
-                        id=im_id,
-                        save_path=test_examples,
-                        )
-        # save image alone
-        save_segmentation(segmentation=seg, 
-                            id = im_id,
-                            save_path=test_segmentations)
     
-    print("Saved Test Data")
-    # preserve memory
-    del test_data
+    if disable_test == False:
+        # test data to just 1 image per batch
+        test_dataloader = DataLoader(test_dataloader.dataset, batch_size = 1, shuffle = False)
+        # save test outputs
+        test_data = trainer.predict(model, dataloaders = [test_dataloader])
+
+        # segmentation images folder
+        test_segmentations = join(test_folder, 'segmentations')
+        if not exists(test_segmentations):
+            os.mkdir(test_segmentations)
+        test_examples = join(test_folder, 'examples')
+        if not exists(test_examples):
+            os.mkdir(test_examples)
+
+        for im_id, seg, im, _, in test_data:
+            
+            # unbatch seg. & image
+            im = im[0]
+            seg = seg[0]
+            im_id += 1
+            # save a comparison
+            save_test_example(image=im,
+                            segmentation=seg,
+                            id=im_id,
+                            save_path=test_examples,
+                            )
+            # save image alone
+            save_segmentation(segmentation=seg, 
+                                id = im_id,
+                                save_path=test_segmentations)
+        
+        print("Saved Test Data")
+        # preserve memory
+        del test_data
 
     # val data to just 1 image per batch
     val_dataloader = DataLoader(val_dataloader.dataset, batch_size = 1, shuffle = False)
@@ -161,6 +163,8 @@ def get_accuracy_metrics(segmentation, gt):
     
 def save_losses_as_text(train_losses, val_losses, save_path = '.'):
     ''' saves the training and validation losses as a txt file'''
+    print(train_losses)
+    print(val_losses)
     train_losses = np.array(train_losses)
     val_losses = np.array(val_losses)
 

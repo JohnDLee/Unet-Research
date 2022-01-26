@@ -16,7 +16,7 @@ from utils.utils_modules import DropBlock2D, Dropblock2d_ichan
 from utils.utils_training import BaseUNetTraining
 from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
-from utils.utils_general import create_dir, toPIL
+from utils.utils_general import create_dir, toPIL, square_pad
 
 class ResizeEval(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
@@ -32,7 +32,11 @@ class ResizeEval(BaseUNetTraining):
     def predict_step(self, batch, batch_idx):
         im, gt, mask = batch
 
+        # Pad Image First to a square
         # perform resize on the fly
+        im = square_pad(im)
+        gt = square_pad(gt)
+        mask = square_pad(mask)
         resize_image = TF.resize(im, size = (self.height, self.width))
         resize_gt = TF.resize(gt, size = (self.height, self.width))
         resize_mask = TF.resize(mask, size = (self.height, self.width))
@@ -115,7 +119,7 @@ def test_uncertainty(args):
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
 
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats, disable_test=True)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

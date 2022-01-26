@@ -3,7 +3,7 @@
 Unet_research/augmented_data*/**
 Unet_research/results*/
 Unet_research/**/*.ipynb
-!Unet_research/unet_code/base_model_tests/test.ipynb
+!Unet_research/unet_code/uncertainty_tests/Evaluate_Tensors.ipynb
 **/*.zip
 **/*.sh
 !Unet_research/requirements.sh

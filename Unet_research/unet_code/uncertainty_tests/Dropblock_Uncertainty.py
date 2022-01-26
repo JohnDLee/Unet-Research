@@ -16,6 +16,7 @@ from utils.utils_modules import DropBlock2D, Dropblock2d_ichan
 from utils.utils_training import BaseUNetTraining
 from utils.utils_dataset import UnetDataset
 from utils.utils_general import create_dir
+from utils.utils_metrics import final_test_metrics
 
 def set_dropblock_on(layer):
     ''' sets dropblock to be in training mode '''
@@ -25,7 +26,7 @@ def set_dropblock_on(layer):
 class DropBlockEval(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, num_iterations = 1000, return_num = 25):
+    def __init__(self, model, num_iterations = 1000, return_num = 25, mode = 'save'):
         """return_num decides how many tensor to return during MonteCarlo Dropblock prediction per prediction. Max is num_iterations.
         Beware memory issues.
         """
@@ -35,6 +36,11 @@ class DropBlockEval(BaseUNetTraining):
             self.return_num = num_iterations
         else:
             self.return_num = return_num
+        self.set_mode(mode)
+
+    def set_mode(self, mode):
+        self.mode = mode
+        assert self.mode in ['save', 'evaluate']
 
 
     def predict_step(self, batch, batch_idx):
@@ -47,7 +53,10 @@ class DropBlockEval(BaseUNetTraining):
         mean = tensors.mean(0)
         std = tensors.std(0)
 
-        return batch_idx, (mean, std, tensors[0:self.return_num].clone())
+        if self.mode == 'save':
+            return batch_idx, (mean, std, tensors[0:self.return_num].clone())
+        elif self.mode == 'evaluate':
+            return batch_idx, mean, im, gt
         
 
 
@@ -70,6 +79,7 @@ def test_uncertainty(args):
 
     # get data
     val_root = join(args.data_path, 'val')
+    test_root = join(args.data_path, 'test')
 
     add_images = lambda x: join(x, 'images')
     add_targets = lambda x: join(x, 'targets')
@@ -80,11 +90,16 @@ def test_uncertainty(args):
                                 target_root=add_targets(val_root),
                                 mask_root=add_masks(val_root),
                                 mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
+    test_dataset = UnetDataset(image_root=add_images(test_root),
+                            mask_root = add_masks(test_root),
+                                mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
 
     val_batch_size = 1
+    test_batch_size = 1
 
     # load into dataloaders
     val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=os.cpu_count())
+    test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=os.cpu_count())
 
     # set up Unet 
     unet = UNet(init_channels=1,
@@ -114,24 +129,37 @@ def test_uncertainty(args):
     unet.create_model()
 
     # Load Training Lightning Module 
-    model = DropBlockEval.load_from_checkpoint(args.model_path, model=unet, num_iterations = args.iter_num, return_num = args.save_num )
+    model = DropBlockEval.load_from_checkpoint(args.model_path, model=unet, num_iterations = args.iter_num, return_num = args.save_num, mode = 'save' )
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
 
+    # SAVE TENSORS FIRST
     # prediction
     mc_data = trainer.predict(model, dataloaders= [val_loader])
     
+    tens = join(stats, 'tensors')
+    os.mkdir(tens)
     # save our predictions (Evaluation elsewhere)
     for im_id, (mean, std, tensors) in mc_data:
         # create new dirs to save tensors
-        im_dir = join(stats, f'image_{im_id}')
+        im_dir = join(tens, f'image_{im_id}')
         os.mkdir(im_dir)
 
         # save data
         torch.save(mean, join(im_dir, 'mean.pt'))
         torch.save(std, join(im_dir, 'std.pt'))
         torch.save(tensors, join(im_dir, 'tensors.pt'))
+    
+    model.set_mode('evaluate')
+    # EVALUATE MEAN
+    statistics = join(stats, 'statistics')
+    os.mkdir(statistics)
+    
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics, disable_test = True)
+        
+        
+
 
 
 if __name__ == '__main__':

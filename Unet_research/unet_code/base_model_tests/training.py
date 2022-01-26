@@ -43,7 +43,7 @@ class UNetTraining(BaseUNetTraining):
                             verbose=False),
             'interval': 'epoch',
             'frequency': 1,
-            'monitor': 'val_loss_avg',
+            'monitor': 'val_loss_epoch',
             'strict': True,
             'name': None,
         }
@@ -202,14 +202,14 @@ def training(args):
     os.mkdir(model_info)
 
     checkpoint_callback = ModelCheckpoint(
-                            monitor="val_loss_avg",
+                            monitor="val_loss_epoch",
                             dirpath=model_info,
                             filename="model-{epoch:02d}-{val_loss:.2f}",
                             save_top_k=1,
                             mode="min",
                             )
     early_stopping_callback = EarlyStopping(
-                            monitor = 'val_loss_avg',
+                            monitor = 'val_loss_epoch',
                             min_delta = 0.0, 
                             patience = 10, # after 10 epochs, just exit
                             mode = 'min'
@@ -223,7 +223,8 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model.load_from_checkpoint(model_info)
+    
+    model.load_from_checkpoint(join(model_info, os.listdir(model_info)[0]))
     statistics = join(dest, 'statistics')
     os.mkdir(statistics)
     final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)

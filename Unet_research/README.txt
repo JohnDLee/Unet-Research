@@ -101,7 +101,65 @@ python unet_code/uncertainty_tests/Dropblock_Uncertainty.py \
 
 8. Evaluate using Evaluate_Uncertainty.ipynb. There are interactable plots.
 
+9. Run MultiFidelity tests on the Base Model:
 
+python unet_code/multi-fidelity/base_model_mf.py \
+                -model_path (results/base_model/model_info/model-epoch=32-val_loss=0.12.ckpt) \
+                -data_path (augmented_data) \
+                -save_path (results/base_model/test_statistics_$1_$2) \
+                -height $1 \
+                -width $2
+                -seed 1234 \
+                --gpus 1 \
+                --profiler simple \
+                --detect_anomaly
+
+$1 and $2 represent height and width respectively
+
+10. Train a MultiFidelity Model
+
+python unet_code/multi-fidelity/multi-fidelity-training.py \
+                -mode train \
+                -data_path (augmented_data) \
+                -save_path (results/mf_model) \
+                -num_epochs 100 \
+                -train_batch 1 \
+                -momentum .99 \
+                -lr .001 \
+                -block_size 7 \
+                -max_drop_prob .15 \
+                -dropblock_steps 1500 \
+                -min_size 32 \
+                -test_sizes 32 32 \
+                -test_sizes 64 64 \
+                -test_sizes 128 128 \
+                -test_sizes 256 256 \
+                -seed 1234 \
+                --gpus 1 \
+                --gradient_clip_val .5 \
+                --check_val_every_n_epoch 1 \
+                --profiler simple \
+                --detect_anomaly
+
+test_sizes are the sizes besides the original to test the ability of the model.
+min_size is the smallest size the model could resize to while training (min_size -> original_size (square_padded))
+
+11. Test model if necessary
+
+python unet_code/multi-fidelity/multi-fidelity-training.py \
+                -mode test \
+                -model_path (results/mf_model/model_info/model-epoch=31-val_loss=0.18.ckpt) \
+                -data_path (augmented_data) \
+                -save_path (results/mf_model/test_statistics) \
+                -test_sizes 32 32 \
+                -test_sizes 64 64 \
+                -test_sizes 128 128 \
+                -test_sizes 256 256 \
+                -seed 1234 \
+                --gpus 1 \
+                --gradient_clip_val .5 \
+                --profiler simple \
+                --detect_anomaly
 
 
 

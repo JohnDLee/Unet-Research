@@ -7,6 +7,7 @@ from PIL import Image #image reader
 import numpy as np
 import argparse
 import pytorch_lightning as pl
+import torchvision.transforms.functional as TF
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import Trainer, seed_everything
 import sys
@@ -14,19 +15,95 @@ import sys
 sys.path.append(os.path.join(os.getcwd(), 'unet_code'))
 
 from utils.utils_unet import UNet
-from utils.utils_modules import DropBlock2D
+from utils.utils_modules import DropBlock2D, Dropblock2d_ichan
 from utils.utils_training import BaseUNetTraining
 from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
-from utils.utils_general import create_dir
+from utils.utils_general import create_dir, square_pad
 
-class UNetTraining(BaseUNetTraining):
+class MFUNetTraining(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, loss_fcn, lr, momentum):
-        super(UNetTraining, self).__init__(model, loss_fcn, optimizer = None)
+    def __init__(self, model, loss_fcn, lr, momentum, min_train_size  = 32, predict_height = None, predict_width = None):
+        super(MFUNetTraining, self).__init__(model, loss_fcn, optimizer = None)
         self.lr = lr
         self.momentum = momentum
+        self.min_train_size = min_train_size
+        self.set_predict_size(predict_height, predict_width)
+
+    def set_predict_size(self, height, width):
+        self.predict_height = height
+        self.predict_width = width
+
+    def training_step(self, batch, batch_idx):
+        im_batch, gt, mask = batch
+        im_batch.requires_grad=True
+
+
+        # pad to square
+        im_batch = square_pad(im_batch)
+        gt = square_pad(gt)
+        mask = square_pad(mask)
+
+        # perform resize on the fly
+        new_size = np.random.randint(low = self.min_train_size, high = im_batch.shape[-1] + 1)
+        im_batch = TF.resize(im_batch, size = (new_size, new_size))
+        gt = TF.resize(gt, size = (new_size, new_size))
+        mask = TF.resize(mask, size = (new_size, new_size))
+
+        segmentation = self._model(im_batch)
+
+        # mask
+        segmentation = segmentation * mask
+        gt = gt * mask
+        
+        loss = self._loss_fcn(segmentation, gt)
+        # recalculate loss based on mask
+        loss *= (segmentation.numel() / mask.count_nonzero())
+        
+        # log every 10
+        if batch_idx % 10:
+            self.log('train_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
+        
+        return loss
+
+
+    def validation_step(self, batch, batch_idx):
+        im_batch, gt, mask = batch
+
+        # pad to square
+        im_batch = square_pad(im_batch)
+        gt = square_pad(gt)
+        mask = square_pad(mask)
+
+        losses = []
+        # perform resize on the fly to test model on 32, 64, 128, 256 sizes
+        for new_size in [32, 64, 128, 256, None]:
+            if new_size is not None:
+                new_im = TF.resize(im_batch, size = (new_size, new_size))
+                new_gt = TF.resize(gt, size = (new_size, new_size))
+                new_mask = TF.resize(mask, size = (new_size, new_size))
+            else:
+                new_im = im_batch
+                new_gt = gt
+                new_mask = mask
+
+            segmentation = self._model(new_im)
+
+            # mask
+            segmentation = segmentation * new_mask
+            
+            loss = self._loss_fcn(segmentation, new_gt)
+            # recalculate loss based on mask
+            loss *= (segmentation.numel() / new_mask.count_nonzero())
+            
+            losses.append(loss.detach())
+            
+            # log each one
+            self.log('val_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
+
+        return torch.tensor(losses).mean()
+    
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(params = self._model.parameters(), lr = self.lr, momentum =self.momentum )
@@ -43,12 +120,26 @@ class UNetTraining(BaseUNetTraining):
                             verbose=False),
             'interval': 'epoch',
             'frequency': 1,
-            'monitor': 'val_loss_avg',
+            'monitor': 'val_loss_epoch',
             'strict': True,
             'name': None,
         }
         return {'optimizer': optimizer,
                 'lr_scheduler': lr_scheduler_config }
+    
+    def predict_step(self, batch, batch_idx):
+        im, gt, mask = batch
+
+        # perform resize on the fly
+        if self.predict_height or self.predict_width is not None:
+            im = TF.resize(im, size = (self.predict_height, self.predict_width))
+            gt = TF.resize(gt, size = (self.predict_height, self.predict_width))
+            mask = TF.resize(mask, size = (self.predict_height, self.predict_width))
+            
+        segmentation = self._model(im)
+        segmentation = segmentation * mask
+        
+        return batch_idx, segmentation, im, gt
 
 
 def testing(args):
@@ -102,7 +193,7 @@ def testing(args):
 
     unet.set_activation_function(nn.ReLU())
     # Default Dropblock because it should be turned off anyways
-    unet.set_dropblock(DropBlock2D,
+    unet.set_dropblock(Dropblock2d_ichan,
                         block_size = args.block_size,
                         drop_prob=args.max_drop_prob,
                         use_scheduler=True,
@@ -116,14 +207,26 @@ def testing(args):
     loss_fn = nn.BCELoss()
 
     # Load Training Lightning Module 
-    model = UNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum)
+    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, min_train_size = args.min_size)
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
     
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
+    statistics = join(args.save_path, f'statistics_normal')
+    os.mkdir(statistics)
+    
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
 
+    # get stats for each size
+    for (height, width ) in args.test_sizes:
+        statistics = join(args.save_path, f'statistics_{height}_{width}')
+        os.mkdir(statistics)
 
+        model.set_predict_size(height, width)
+
+        final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
+
+        
 
 
 def training(args):
@@ -160,7 +263,7 @@ def training(args):
                                 mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
 
     train_batch_size = args.train_batch
-    val_batch_size = args.val_batch
+    val_batch_size = 1
     test_batch_size = 1
 
     # load into dataloaders
@@ -181,7 +284,7 @@ def training(args):
                 )
 
     unet.set_activation_function(nn.ReLU())
-    unet.set_dropblock(DropBlock2D,
+    unet.set_dropblock(Dropblock2d_ichan,
                         block_size = args.block_size,
                         drop_prob=args.max_drop_prob,
                         use_scheduler=True,
@@ -195,21 +298,21 @@ def training(args):
     loss_fn = nn.BCELoss()
 
     # Training Lightning Module
-    model = UNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum)
+    model = MFUNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, min_train_size = args.min_size)
 
 
     model_info = join(dest, 'model_info')
     os.mkdir(model_info)
 
     checkpoint_callback = ModelCheckpoint(
-                            monitor="val_loss_avg",
+                            monitor="val_loss_epoch",
                             dirpath=model_info,
                             filename="model-{epoch:02d}-{val_loss:.2f}",
                             save_top_k=1,
                             mode="min",
                             )
     early_stopping_callback = EarlyStopping(
-                            monitor = 'val_loss_avg',
+                            monitor = 'val_loss_epoch',
                             min_delta = 0.0, 
                             patience = 10, # after 10 epochs, just exit
                             mode = 'min'
@@ -223,13 +326,23 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model.load_from_checkpoint(model_info)
-    statistics = join(dest, 'statistics')
+    model.load_from_checkpoint(join(model_info, os.listdir(model_info)[0]))
+
+    # get normal stats
+    stats_dir = join(dest, 'statistics')
+    os.mkdir(stats_dir)
+    statistics = join(stats_dir, 'statistics_normal')
     os.mkdir(statistics)
+
     final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
 
-    
-    
+    # get stats for each size
+    for (height, width ) in args.test_sizes:
+        statistics = join(stats_dir, f'statistics_{height}_{width}')
+        os.mkdir(statistics)
+        model.set_predict_size(height, width)
+
+        final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics, disable_test = True)
 
 
 
@@ -246,12 +359,13 @@ if __name__ == '__main__':
     parser.add_argument('-save_path', dest = 'save_path', required = True, help = 'Path to save folder. If Mode = Train, Should be Nonexistent, but will created a duplicate save_path_X for X = 1-5 if it does. If Mode: Test, this folder should be the folder you would like to save statistics in.')
     parser.add_argument('-num_epochs', dest = 'num_epochs', type = int, default = 50, help = 'Number of Max epochs to run. Defaults to 50')
     parser.add_argument('-train_batch', dest = 'train_batch', type = int, default = 1, help = 'Training batch size. Defaults to 1')
-    parser.add_argument('-val_batch', dest = 'val_batch', type = int, default = 1, help = 'Validation batch size. Defaults to 1')
     parser.add_argument('-lr', dest = 'lr', type = float, default = .001, help = 'Optimizer starting Learning Rate. However, will be optimized by Pytorch Lightning. Defaults to .001')
     parser.add_argument('-momentum', dest = 'momentum', type = float, default = .99, help = 'Momentum the Optimizer will use. Defaults to .99')
     parser.add_argument('-block_size', dest = 'block_size', type = int, default = 7, help = 'Block size of dropblock, which must be odd numbers. A size of 1 is equivalent to dropout. Defaults to 7.')
     parser.add_argument('-max_drop_prob',dest = 'max_drop_prob', type = float, default = .15, help = 'Maximum drop probability of dropblock, must be from 0-1. Defaults to .15')
     parser.add_argument('-dropblock_steps', dest = 'dropblock_steps', type = int, default = 1500, help = 'Number of steps before max drop prob is reached. Defaults to 1500')
+    parser.add_argument('-min_size', dest = 'min_size', type = int, default = 32, help = 'Minimum size of the crop during training.')
+    parser.add_argument('-test_sizes', dest = 'test_sizes', action='append', type = int, nargs=2, metavar=('height','width'), help='Sizes to test besides original. Applies for both test and train mode')
     parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )
     parser = Trainer.add_argparse_args(parser)
 

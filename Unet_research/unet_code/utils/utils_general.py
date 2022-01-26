@@ -1,5 +1,6 @@
 import torch
 from torchvision import transforms
+import torchvision.transforms.functional as TF
 import os
 from os.path import join, exists
 
@@ -27,3 +28,16 @@ def create_dir(path):
             return None
     
     return dir
+
+def square_pad(tensor):
+    """ pads to max(H,W) so that resulting tensor has H'=W'"""
+
+    size = max(tensor.shape[-2], tensor.shape[-1])
+    total_pad = (size - tensor.shape[-2])
+    top = total_pad // 2
+    bot = total_pad - top
+    total_pad = (size - tensor.shape[-1])
+    right = total_pad // 2
+    left = total_pad - right
+
+    return TF.pad(tensor, padding = (left, top, right, bot), fill = 0)
