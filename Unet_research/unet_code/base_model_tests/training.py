@@ -224,7 +224,8 @@ def training(args):
 
     # load best model
     
-    model.load_from_checkpoint(join(model_info, os.listdir(model_info)[0]))
+    model = UNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum)
+
     statistics = join(dest, 'statistics')
     os.mkdir(statistics)
     final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)

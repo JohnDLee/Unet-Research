@@ -70,44 +70,7 @@ class MFUNetTraining(BaseUNetTraining):
         
         return loss
 
-
-    def validation_step(self, batch, batch_idx):
-        im_batch, gt, mask = batch
-
-        # pad to square
-        im_batch = square_pad(im_batch)
-        gt = square_pad(gt)
-        mask = square_pad(mask)
-
-        prev_size = im_batch.size()
-
-        losses = []
-        # perform resize on the fly to test model on 32, 64, 128, 256 sizes
-        for new_size in [32, 64, 128, 256, None]:
-            if new_size is not None:
-                new_im = TF.resize(im_batch, size = (new_size, new_size))
-            else:
-                new_im = im_batch
-
-            segmentation = self._model(new_im)
-
-            # resize back up
-            if new_size is not None:
-                segmentation = TF.resize(segmentation, size = (prev_size[-2], prev_size[-1]))
-
-            # mask
-            segmentation = segmentation * mask
-            
-            loss = self._loss_fcn(segmentation, gt)
-            # recalculate loss based on mask
-            loss *= (segmentation.numel() / mask.count_nonzero())
-            
-            losses.append(loss.detach())
-            
-            # log each one
-            self.log('val_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
-
-        return torch.tensor(losses).mean()
+    # default validation
     
 
     def configure_optimizers(self):
@@ -317,7 +280,7 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model.load_from_checkpoint(join(model_info, os.listdir(model_info)[0]))
+    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, min_train_size = args.min_size)
 
     # get normal stats
     stats_dir = join(dest, 'statistics')
