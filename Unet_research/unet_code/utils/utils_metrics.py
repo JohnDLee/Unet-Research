@@ -272,15 +272,17 @@ def save_val_example(image, segmentation, gt, id, save_path):
         if gt = None, no ground truth will be displayed
         Segmentation and GT should already be in image format (or a list containing images)'''
 
-    fig, axes = plt.subplots(nrows = 1, ncols = 3, figsize = (18, 9), tight_layout=True)
+    fig, axes = plt.subplots(nrows = 1, ncols = 4, figsize = (27, 9), tight_layout=True)
     
     # base image
     axes[0].imshow(toPIL(image), cmap = 'gray') # plain image
     axes[0].set_title("Base Image")
     axes[1].imshow(toPIL(segmentation), cmap = 'gray') # first class
     axes[1].set_title("Vessel Segmentation")
-    axes[2].imshow(toPIL(gt), cmap = 'gray') # first class
-    axes[2].set_title("Vessel Ground Truth")
+    axes[2].imshow(toPIL(torch.round(segmentation)), cmap = 'gray')
+    axes[2].set_title("Vessel Segmentation - Thresholded")
+    axes[3].imshow(toPIL(gt), cmap = 'gray') # first class
+    axes[3].set_title("Vessel Ground Truth")
     fig.suptitle(f'Val Image {id}')
     
     fig.savefig(os.path.join(save_path, f'val_example_{id}.png'))

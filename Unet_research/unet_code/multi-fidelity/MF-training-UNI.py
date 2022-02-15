@@ -10,8 +10,8 @@ import pytorch_lightning as pl
 import torchvision.transforms.functional as TF
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import Trainer, seed_everything
-import sys
 from math import ceil
+import sys
 
 sys.path.append(os.path.join(os.getcwd(), 'unet_code'))
 
@@ -30,19 +30,18 @@ class MFUNetTraining(BaseUNetTraining):
         self.lr = lr
         self.momentum = momentum
         
-        # compute num original (500/16 for orig, 500/4 for 256, Remainder for 128 (Missing some 128) )
-        num_orig = ceil(len_data/16)
-        num_256 = ceil(len_data/4)
+        # compute num original x = 504/21 (x for orig, 4x for 256, ~16x for 128)
+        num_orig = ceil(len_data/3)
+        num_256 = ceil(len_data/3)
         num_128 = len_data - num_orig - num_256
         # create random order of number of resized
         self.sizes = np.array([-1 for i in range(num_orig)] + [256 for i in range(num_256)] + [128 for i in range(num_128)])
         np.random.shuffle(self.sizes)
-        print(self.sizes)
+
 
     def training_step(self, batch, batch_idx):
         im_batch, gt, mask = batch
         im_batch.requires_grad=True
-
 
         # pad to square before resizing to 
         im_batch = square_pad(im_batch)
@@ -169,17 +168,14 @@ def testing(args):
     loss_fn = nn.BCELoss()
 
     # Load Training Lightning Module 
-    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0) # len_data is unecessary
+    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0)
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
     
-    statistics = join(args.save_path, f'statistics_normal')
-    os.mkdir(statistics)
-    
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
 
-
+        
 
 
 def training(args):
@@ -279,16 +275,13 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0) # don't need length
+    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0)
 
     # get normal stats
     stats_dir = join(dest, 'statistics')
     os.mkdir(stats_dir)
-    statistics = join(stats_dir, 'statistics_normal')
-    os.mkdir(statistics)
 
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
-
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats_dir)
 
 
 if __name__ == '__main__':

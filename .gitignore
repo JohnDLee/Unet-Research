@@ -3,10 +3,11 @@
 Unet_research/augmented_data*/**
 Unet_research/results*/
 Unet_research/**/*.ipynb
-!Unet_research/unet_code/uncertainty_tests/Evaluate_Tensors.ipynb
+!Unet_research/unet_code/Evaluate_Tensors.ipynb
 **/*.zip
 **/*.sh
 !Unet_research/requirements.sh
+Unet_research/unet_code/uncertainty_tests/submission_script.py
 *.o*
 Unet_research/lightning_logs
 Unet_research/lightning_logs/**

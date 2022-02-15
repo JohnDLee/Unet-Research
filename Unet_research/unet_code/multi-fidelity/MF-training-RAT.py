@@ -22,15 +22,22 @@ from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
 from utils.utils_general import create_dir, square_pad
 
-class RFUNetTraining(BaseUNetTraining):
+class MFUNetTraining(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, loss_fcn, lr, momentum, train_size  = 32):
-        super(RFUNetTraining, self).__init__(model, loss_fcn, optimizer = None)
+    def __init__(self, model, loss_fcn, lr, momentum, len_data):
+        super(MFUNetTraining, self).__init__(model, loss_fcn, optimizer = None)
         self.lr = lr
         self.momentum = momentum
-        self.train_size = train_size
-
+        
+        # compute num original x = 504/21 (x for orig, 4x for 256, ~16x for 128)
+        x = len_data/21
+        num_orig = ceil(x)
+        num_256 = ceil(4 * x)
+        num_128 = len_data - num_orig - num_256
+        # create random order of number of resized
+        self.sizes = np.array([-1 for i in range(num_orig)] + [256 for i in range(num_256)] + [128 for i in range(num_128)])
+        np.random.shuffle(self.sizes)
 
     def training_step(self, batch, batch_idx):
         im_batch, gt, mask = batch
@@ -42,14 +49,20 @@ class RFUNetTraining(BaseUNetTraining):
         gt = square_pad(gt)
         mask = square_pad(mask)
 
-        old_size = im_batch.shape[-1]
-        # perform resize on the fly on all data
-        im_batch = TF.resize(im_batch, size = (self.train_size, self.train_size))
+        prev_size = im_batch.size()
+
+        # perform resize on the fly
+        new_size = self.sizes[batch_idx] # retrieve the size the image should be transformed to
+        
+        # check if original
+        if new_size != -1:
+            im_batch = TF.resize(im_batch, size = (new_size, new_size))
 
         segmentation = self._model(im_batch)
 
-        # resize segmentation back up
-        segmentation = TF.resize(segmentation, size = (old_size, old_size))
+        # resize back up - no need to resize if we did not resize.
+        if new_size != -1:
+            segmentation = TF.resize(segmentation, size = (prev_size[-2], prev_size[-1]))
 
         # mask
         segmentation = segmentation * mask
@@ -65,34 +78,8 @@ class RFUNetTraining(BaseUNetTraining):
         
         return loss
 
-
-    def validation_step(self, batch, batch_idx):
-        im_batch, gt, mask = batch
-
-        # pad to square before resizing to 
-        im_batch = square_pad(im_batch)
-        gt = square_pad(gt)
-        mask = square_pad(mask)
-
-        old_size = im_batch.shape[-1]
-        # perform resize on the fly on all data
-        im_batch = TF.resize(im_batch, size = (self.train_size, self.train_size))
-
-        segmentation = self._model(im_batch)
-
-        # resize segmentation back up
-        segmentation = TF.resize(segmentation, size = (old_size, old_size))
-
-        # mask
-        segmentation = segmentation * mask
-        gt = gt * mask
-        
-        loss = self._loss_fcn(segmentation, gt)
-
-        # log
-        self.log('val_loss', loss, prog_bar=True, logger=True,  on_step = True, on_epoch=True)
-
-        return loss
+    # default validation
+    
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(params = self._model.parameters(), lr = self.lr, momentum =self.momentum )
@@ -182,15 +169,15 @@ def testing(args):
     loss_fn = nn.BCELoss()
 
     # Load Training Lightning Module 
-    model = RFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, train_size = args.new_size)
+    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0) # len_data is unecessary
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
+
     
-    statistics = join(args.save_path, f'statistics_normal')
-    os.mkdir(statistics)
-    
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats)
+
+
 
 
 def training(args):
@@ -225,12 +212,6 @@ def training(args):
     test_dataset = UnetDataset(image_root=add_images(test_root),
                             mask_root = add_masks(test_root),
                                 mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
-
-    # modify train_dataset to have reduced data.
-    if args.train_ratio != 1:
-        train_size = ceil(args.train_ratio * len(train_dataset))
-        train_dataset, _ = random_split(train_dataset, [train_size, len(train_dataset) - train_size])
-        del _ # remove extra data.
 
     train_batch_size = args.train_batch
     val_batch_size = 1
@@ -268,7 +249,7 @@ def training(args):
     loss_fn = nn.BCELoss()
 
     # Training Lightning Module
-    model = RFUNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, train_size = args.new_size)
+    model = MFUNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = len(train_dataset))
 
 
     model_info = join(dest, 'model_info')
@@ -296,15 +277,14 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model = RFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, train_size = args.new_size)
+    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0) # don't need length
 
     # get normal stats
     stats_dir = join(dest, 'statistics')
     os.mkdir(stats_dir)
-    statistics = join(stats_dir, 'statistics_normal')
-    os.mkdir(statistics)
 
-    final_test_metrics(trainer, model, val_loader, test_loader, save_path = statistics)
+    final_test_metrics(trainer, model, val_loader, test_loader, save_path = stats_dir)
+
 
 
 if __name__ == '__main__':
@@ -324,8 +304,6 @@ if __name__ == '__main__':
     parser.add_argument('-block_size', dest = 'block_size', type = int, default = 7, help = 'Block size of dropblock, which must be odd numbers. A size of 1 is equivalent to dropout. Defaults to 7.')
     parser.add_argument('-max_drop_prob',dest = 'max_drop_prob', type = float, default = .15, help = 'Maximum drop probability of dropblock, must be from 0-1. Defaults to .15')
     parser.add_argument('-dropblock_steps', dest = 'dropblock_steps', type = int, default = 1500, help = 'Number of steps before max drop prob is reached. Defaults to 1500')
-    parser.add_argument('-new_size', dest = 'new_size', type = int, default = 32, help = 'Minimum size of the crop during training.')
-    parser.add_argument('-train_ratio', dest = 'train_ratio', type = float, default = 1, help = 'Ratio of data to use while training. Defaults to 1, or all data.')
     parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )
     parser = Trainer.add_argparse_args(parser)
 
