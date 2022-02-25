@@ -63,7 +63,7 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
         if not exists(test_examples):
             os.mkdir(test_examples)
 
-        for im_id, seg, im, _, in test_data:
+        for im_id, seg, im, _, mask in test_data:
             
             # unbatch seg. & image
             im = im[0]
@@ -93,9 +93,14 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
     val_examples = join(val_folder, 'examples')
     if not exists(val_examples):
         os.mkdir(val_examples)
+    
+        # segmentation images folder
+    val_tensors = join(val_folder, 'tensors')
+    if not exists(val_tensors):
+        os.mkdir(val_tensors)
 
     scores_dict = {'Validation_Image':[], 'F1_Vessel':[], 'AUROC_Vessel':[], 'Accuracy_Vessel':[]}
-    for im_id, seg, im, gt in val_data:
+    for im_id, seg, im, gt, mask in val_data:
 
         im = im[0]
         seg = seg[0]
@@ -105,6 +110,9 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
         im_folder = join(val_examples, f"val_image_{im_id}")
         if not exists(im_folder):
             os.mkdir(im_folder)
+        im_folder2 = join(val_tensors, f"image_{im_id - 1}")
+        if not exists(im_folder2):
+            os.mkdir(im_folder2)
                 
                 
         # save examples
@@ -125,10 +133,11 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
                         save_path=im_folder)
 
     
-    
+        torch.save(seg, join(im_folder2, 'segmentation.pt'))
         # save AUCROC F1 DICE to df
         f1, auroc, accu = get_accuracy_metrics(segmentation=seg,
-                                    gt = gt)
+                                    gt = gt,
+                                    mask = mask)
         scores_dict['Validation_Image'].append(im_id)
         scores_dict['F1_Vessel'].append(f1)
         scores_dict['AUROC_Vessel'].append(auroc)
@@ -145,17 +154,20 @@ def final_test_metrics(trainer,model, val_dataloader, test_dataloader, save_path
 
     
 
-def get_accuracy_metrics(segmentation, gt):
+def get_accuracy_metrics(segmentation, gt, mask):
     ''' returns (f1 score vessel,  auroc , accuracy 0) '''
-    
-    # threshold
-    rounded_seg = torch.round(segmentation).flatten().numpy()
-    long_gt = gt.long().flatten().numpy()
+
+    # remove masked values
+    masked_seg = np.ma.array(segmentation.numpy(), mask = mask.long().numpy())
+    long_gt = np.ma.array(gt.long().numpy(), mask = mask.long().numpy())
+    rounded_seg = masked_seg[masked_seg.mask].round()
+    long_gt = long_gt[long_gt.mask]
+
     
     # f1 score
     f1 = metrics.f1_score(y_true = long_gt, y_pred = rounded_seg)
     # auroc
-    auroc = metrics.roc_auc_score(y_true = long_gt, y_score = rounded_seg)
+    auroc = metrics.roc_auc_score(y_true = long_gt, y_score = masked_seg[masked_seg.mask])
     # accuracy
     accu = metrics.accuracy_score(y_true = long_gt, y_pred = rounded_seg,)
     return f1, auroc, accu

@@ -75,5 +75,5 @@ class BaseUNetTraining(pl.LightningModule):
 
         segmentation = segmentation * mask
         
-        return batch_idx, segmentation, im_batch, gt
+        return batch_idx, segmentation, im_batch, gt, mask
     

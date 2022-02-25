@@ -128,7 +128,7 @@ class RFUNetTraining(BaseUNetTraining):
 
         segmentation = segmentation * mask
         
-        return batch_idx, segmentation, im_batch, gt
+        return batch_idx, segmentation, im_batch, gt, mask
     
 
 def testing(args):

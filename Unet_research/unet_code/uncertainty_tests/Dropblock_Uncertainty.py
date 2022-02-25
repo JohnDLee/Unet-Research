@@ -56,7 +56,7 @@ class DropBlockEval(BaseUNetTraining):
         if self.mode == 'save':
             return batch_idx, (mean, std, tensors[0:self.return_num].clone())
         elif self.mode == 'evaluate':
-            return batch_idx, mean, im, gt
+            return batch_idx, mean, im, gt, mask
         
 
 
