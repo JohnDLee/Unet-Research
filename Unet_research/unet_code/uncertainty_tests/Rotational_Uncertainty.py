@@ -16,12 +16,12 @@ from utils.utils_modules import DropBlock2D, Dropblock2d_ichan
 from utils.utils_training import BaseUNetTraining
 from utils.utils_metrics import final_test_metrics
 from utils.utils_dataset import UnetDataset
-from utils.utils_general import create_dir, toPIL
+from utils.utils_general import create_dir, toPIL, square_pad
 
 class RotationEval(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, num_iterations = 1000, return_num = 25):
+    def __init__(self, model, num_iterations = 1000, return_num = 25, resize = -1):
         """return_num decides how many tensor to return during MonteCarlo Dropblock prediction per prediction. Max is num_iterations.
         Beware memory issues.
         """
@@ -31,11 +31,22 @@ class RotationEval(BaseUNetTraining):
             self.return_num = num_iterations
         else:
             self.return_num = return_num
-
+        self.resize = resize
 
     def predict_step(self, batch, batch_idx):
         im, gt, mask = batch
+        
+        if self.resize != -1:
+            # pad to square before resizing to 
+            im = square_pad(im)
+            gt = square_pad(gt)
+            mask = square_pad(mask)
 
+            # perform resize on the fly on all data
+            im = TF.resize(im, size = (self.resize, self.resize))
+            gt = TF.resize(gt, size = (self.resize, self.resize))
+            mask = TF.resize(mask, size = (self.resize, self.resize))
+            
         runs = []
         for iter in range(1, self.num_iterations+1):
 
@@ -113,7 +124,7 @@ def test_uncertainty(args):
     unet.create_model()
 
     # Load Training Lightning Module 
-    model = RotationEval.load_from_checkpoint(args.model_path, model=unet, num_iterations = 359, return_num = args.save_num )
+    model = RotationEval.load_from_checkpoint(args.model_path, model=unet, num_iterations = 359, return_num = args.save_num, resize = args.resize )
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
@@ -141,6 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('-data_path', dest = 'data_path', required=True, help = 'Datapath containing augmented data. Must contain a val, test folder which each have images, (targets), and masks')
     parser.add_argument('-save_path', dest = 'save_path', required = True, help = 'Path to save folder. Should be Nonexistent, but will created a duplicate save_path_X for X = 1-5 if it does.')
     parser.add_argument('-save_num', dest = 'save_num', type = int, default = 0, help = 'Number of tensors from MonteCarlo to save. Beware memory issues.')
+    parser.add_argument('-resize', dest = 'resize', type = int, default = -1, help =  'Resize the image before MonteCarlo.')
     parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )
     parser = Trainer.add_argparse_args(parser)
 

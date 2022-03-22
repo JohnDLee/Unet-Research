@@ -21,6 +21,8 @@ if __name__=='__main__':
             os.system(f"qsub unet_code/multi-fidelity/MF_testing_UNI.sh {checkpoint} {os.path.join(model_folder, 'statistics')}")
         if model_name == 'MF-2':
             os.system(f"qsub unet_code/multi-fidelity/MF_testing_RAT.sh {checkpoint} {os.path.join(model_folder, 'statistics')}")
+        if model_name == 'MF-2':
+            os.system(f"qsub unet_code/multi-fidelity/MF_testing_RSZ_RAT.sh {checkpoint} {os.path.join(model_folder, 'statistics')}")
 
         if model_name == 'LF-1':
             os.system(f"qsub unet_code/multi-fidelity/LF_testing_HFT.sh {checkpoint} {os.path.join(model_folder, 'statistics')} 256")

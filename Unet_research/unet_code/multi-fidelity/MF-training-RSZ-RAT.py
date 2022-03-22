@@ -61,16 +61,12 @@ class MFUNetTraining(BaseUNetTraining):
         # perform resize on the fly
         new_size = self.sizes[batch_idx] # retrieve the size the image should be transformed to
         
-        # check if original
+        # check if original & resize to lose info.
         if new_size != -1:
-            im_batch = TF.resize(im_batch, size = (new_size, new_size))
+            im_batch = TF.resize(TF.resize(im_batch, size = (new_size, new_size)), (prev_size[-2], prev_size[-1]))
 
         segmentation = self._model(im_batch)
-
-        # resize back up - no need to resize if we did not resize.
-        if new_size != -1:
-            segmentation = TF.resize(segmentation, size = (prev_size[-2], prev_size[-1]))
-
+        
         # mask
         segmentation = segmentation * mask
         gt = gt * mask

@@ -25,18 +25,25 @@ from utils.utils_general import create_dir, square_pad
 class MFUNetTraining(BaseUNetTraining):
     """ base training module for UNet, alter predict step for more predictions"""
 
-    def __init__(self, model, loss_fcn, lr, momentum, len_data):
+    def __init__(self, model, loss_fcn, lr, momentum, len_orig, num_augmentations):
         super(MFUNetTraining, self).__init__(model, loss_fcn, optimizer = None)
         self.lr = lr
         self.momentum = momentum
         
-        # compute num original x = 504/21 (x for orig, 4x for 256, ~16x for 128)
-        num_orig = ceil(len_data/3)
-        num_256 = ceil(len_data/3)
-        num_128 = len_data - num_orig - num_256
+        # compute uniform (5, 5, 4)
+        num_128 = ceil(len_orig/3)
+        num_256 = ceil(len_orig/3)
+        num_orig = len_orig - num_128 - num_256
         # create random order of number of resized
         self.sizes = np.array([-1 for i in range(num_orig)] + [256 for i in range(num_256)] + [128 for i in range(num_128)])
         np.random.shuffle(self.sizes)
+        # expand sizes to match the current
+        new_sizes = []
+        for size in self.sizes:
+            new_sizes += [size for i in range(num_augmentations)]
+        self.sizes = np.array(new_sizes)
+        
+        
 
 
     def training_step(self, batch, batch_idx):
@@ -168,7 +175,7 @@ def testing(args):
     loss_fn = nn.BCELoss()
 
     # Load Training Lightning Module 
-    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0)
+    model = MFUNetTraining.load_from_checkpoint(args.model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_orig = 0, num_augmentations = 0)
 
     # call Trainer
     trainer = Trainer.from_argparse_args(args, logger = False)
@@ -216,7 +223,7 @@ def training(args):
     test_batch_size = 1
 
     # load into dataloaders
-    train_loader = DataLoader(train_dataset, batch_size = train_batch_size,shuffle=True, drop_last=False, num_workers=os.cpu_count()) 
+    train_loader = DataLoader(train_dataset, batch_size = train_batch_size,shuffle=False, drop_last=False, num_workers=os.cpu_count()) 
     val_loader = DataLoader(val_dataset, batch_size = val_batch_size, shuffle = False, num_workers=os.cpu_count())
     test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers=os.cpu_count())
 
@@ -247,7 +254,7 @@ def training(args):
     loss_fn = nn.BCELoss()
 
     # Training Lightning Module
-    model = MFUNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = len(train_dataset))
+    model = MFUNetTraining(unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_orig = args.orig_train_size, num_augmentations = args.num_augmentations)
 
 
     model_info = join(dest, 'model_info')
@@ -275,7 +282,7 @@ def training(args):
     trainer.fit(model, train_loader, val_loader)
 
     # load best model
-    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_data = 0)
+    model = MFUNetTraining.load_from_checkpoint(checkpoint_callback.best_model_path, model=unet, loss_fcn=loss_fn, lr = args.lr, momentum = args.momentum, len_orig = 0, num_augmentations = 0)
 
     # get normal stats
     stats_dir = join(dest, 'statistics')
@@ -299,6 +306,8 @@ if __name__ == '__main__':
     parser.add_argument('-lr', dest = 'lr', type = float, default = .001, help = 'Optimizer starting Learning Rate. However, will be optimized by Pytorch Lightning. Defaults to .001')
     parser.add_argument('-momentum', dest = 'momentum', type = float, default = .99, help = 'Momentum the Optimizer will use. Defaults to .99')
     parser.add_argument('-block_size', dest = 'block_size', type = int, default = 7, help = 'Block size of dropblock, which must be odd numbers. A size of 1 is equivalent to dropout. Defaults to 7.')
+    parser.add_argument('-orig_train_size', dest = 'orig_train_size', type = int, default = 14, help= 'Original size of the training dataset before augmentation')
+    parser.add_argument('-num_augmentations', dest = 'num_augmentations', type = int, default = 36, help= 'Number of augmented images per image in the original training dataset')
     parser.add_argument('-max_drop_prob',dest = 'max_drop_prob', type = float, default = .15, help = 'Maximum drop probability of dropblock, must be from 0-1. Defaults to .15')
     parser.add_argument('-dropblock_steps', dest = 'dropblock_steps', type = int, default = 1500, help = 'Number of steps before max drop prob is reached. Defaults to 1500')
     parser.add_argument('-seed', dest = 'seed', type = int, default = -1, help = 'Seed for reproducability. Defaults to -1, which is equivalent to None' )

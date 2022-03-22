@@ -1,60 +1,18 @@
 import sys
 import os
 from os.path import join, exists
-from xml.etree.ElementInclude import include
+from cv2 import resize
 import torch
+from pytorch_lightning import seed_everything
 import argparse
 import albumentations as A
 from PIL import Image
 from tqdm import tqdm
-
+import numpy as np
+import torchvision.transforms.functional as TF
 sys.path.append(os.getcwd() + '/unet_code')
 from utils.utils_imloader import ImLoader
-
-def gen_givens(dest: str, num: int, loader: ImLoader, transformation: A.Compose):
-    # populate train_dest
-    im_path, target_path, mask_path = gen_subdir(dest, include_targets = True)
-    num_added = 0
-    pbar = tqdm(total = num, desc = f"Saving images to {dest}")
-    while(num_added < num):
-        for im, gt, mask in loader:
-            transformed = transformation(image = im,
-                                            target = gt,
-                                            mask = mask)
-
-            Image.fromarray(transformed['target']).save(join(target_path, f'{num_added}_target.png'))
-            Image.fromarray(transformed['image']).save(join(im_path, f'{num_added}_image.png'))
-            Image.fromarray(transformed['mask']).save(join(mask_path, f'{num_added}_mask.png'))
-            num_added += 1
-            pbar.update(1)
-
-def gen_tests(dest: str, num: int, loader: ImLoader, transformation: A.Compose):
-    # populate train_dest
-    im_path, mask_path = gen_subdir(dest, include_targets = False)
-    count = 1
-    pbar = tqdm(total = num, desc = f"Saving images to {dest}")
-    for im, gt, mask in loader:
-
-        transformed = transformation(image = im, # should be basically an identity
-                                        mask = mask)
-
-        Image.fromarray(transformed['image']).save(join(im_path, f'{str(count).zfill(2)}_image.png'))
-        Image.fromarray(transformed['mask']).save(join(mask_path, f'{str(count).zfill(2)}_mask.png'))
-        count+= 1
-        pbar.update(1)
-        
-
-def gen_subdir(path: str, include_targets: bool = True):
-    """generates subdirs image, targets, masks"""
-    im_path = join(path, 'images')
-    mask_path = join(path, 'masks')
-    os.mkdir(im_path)
-    os.mkdir(mask_path)
-    if include_targets:      
-        target_path = join(path, 'targets')
-        os.mkdir(target_path)
-        return im_path, target_path, mask_path
-    return im_path, mask_path
+from utils.utils_preprocessing import *
 
 
 if __name__ == '__main__':
@@ -62,14 +20,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-dest', dest = 'dest', type = str, default = 'augmented_data', help = 'Sets the location for the new data')
-    parser.add_argument('-tn', dest = 'num_train', type = int, default = 500, help = 'Generates n images for training. Default 500.')
-    parser.add_argument('-tv', dest = 'num_val', type = int, default = 20, help = 'Generates n images for augmented validation. Default 20.')
     parser.add_argument('-seed', dest = 'seed', type = int, default = 1234, help = 'Sets the seed for reproducability' )
 
     args = parser.parse_args()
     
     # set seed
-    torch.manual_seed(args.seed)
+    seed_everything(args.seed)
 
     # specify data path
     training_root = 'datasets/training'
@@ -131,22 +87,19 @@ if __name__ == '__main__':
     # create folders inside
     train_dest = join(dest, 'train')
     val_orig_dest = join(dest, 'val') # original validations
-    val_aug_dest = join(dest, 'val_aug') # augmented validations
     test_dest = join(dest, 'test')
 
-    for paths in [train_dest, val_orig_dest, val_aug_dest, test_dest]:
+    for paths in [train_dest, val_orig_dest, test_dest]:
         os.mkdir(paths)
     
+    num_train = 36
     # populate train_dest
-    gen_givens(train_dest, num = args.num_train, loader = training, transformation=train_transform)
-        
+    gen_givens(train_dest, num = num_train, loader = training, transformation=train_transform, seed = args.seed)
+    
     # populate val_orig_dest
-    gen_givens(val_orig_dest, num = len(val), loader = val, transformation=val_transform)
-
-    # populate val_aug_dest
-    gen_givens(val_aug_dest, num = args.num_val, loader = val, transformation=train_transform)
+    gen_givens(val_orig_dest, num = 1, loader = val, transformation=val_transform, seed = args.seed)
 
     # populate test_dest
-    gen_tests(test_dest, num = len(test), loader = test, transformation=test_transform)
+    gen_tests(test_dest, num = 1, loader = test, transformation=test_transform)
 
 

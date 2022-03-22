@@ -223,11 +223,10 @@ def training(args):
                             mask_root = add_masks(test_root),
                                 mode = {'image': 'L', 'target': 'L', 'mask' : 'L'})
 
-    # modify train_dataset to have reduced data.
+    # modify train_dataset to have reduced data, but sequentially
     if args.train_ratio != 1:
         train_size = ceil(args.train_ratio * len(train_dataset))
-        train_dataset, _ = random_split(train_dataset, [train_size, len(train_dataset) - train_size])
-        del _ # remove extra data.
+        train_dataset = torch.utils.data.Subset(train_dataset, range(train_size))
 
     train_batch_size = args.train_batch
     val_batch_size = 1
