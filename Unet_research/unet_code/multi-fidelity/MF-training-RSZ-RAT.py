@@ -64,6 +64,9 @@ class MFUNetTraining(BaseUNetTraining):
         # check if original & resize to lose info.
         if new_size != -1:
             im_batch = TF.resize(TF.resize(im_batch, size = (new_size, new_size)), (prev_size[-2], prev_size[-1]))
+            gt = TF.resize(TF.resize(gt, size = (new_size, new_size)), size = (prev_size[-2], prev_size[-1]))
+            mask = TF.resize(TF.resize(mask, size = (new_size, new_size)), size = (prev_size[-2], prev_size[-1]))
+            
 
         segmentation = self._model(im_batch)
         
