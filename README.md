@@ -33,14 +33,15 @@ by 565, manual annotations by individuals trained by an experienced ophthalmolog
 Note: () means the parameter is a directory/file and can be changed
 3. Generate augmentations: 
 
+```
 python3 unet_code/base_model_tests/create_augmentations.py -seed 1234 \
                                     -tn 500 \
                                     -tv 20 \
                                     -dest (augmented_data)
-
+```
 
 4. Generate a base model from unet_code/base_model_tests/training.py like so:
-
+```
 mkdir results # needed to store results
 
 python unet_code/base_model_tests/training.py \
@@ -65,9 +66,10 @@ python unet_code/base_model_tests/training.py \
 # gpus can be changed in number or removed altogethor (not recommended)
 # lr will be automatically tuned
 # dropblock is automatically scheduled
+```
 
 5. If tests would be run on the base model, use test mode:
-
+```
 python unet_code/base_model_tests/training.py \
                 -mode test \
                 -model_path (results/base_model/model_info/(your_checkpoint)) \
@@ -81,9 +83,9 @@ python unet_code/base_model_tests/training.py \
                 --detect_anomaly
 
 # checkpoint names may be different
-
+```
 6. Run Rotational Uncertainty:
-
+```
 python unet_code/uncertainty_tests/Rotational_Uncertainty.py \
                 -model_path (results/base_model/model_info/your_model_ckpt) \
                 -data_path (augmented_data) \
@@ -93,11 +95,11 @@ python unet_code/uncertainty_tests/Rotational_Uncertainty.py \
                 --gpus 1 \
                 --profiler simple \
                 --detect_anomaly
-
+```
 7. Run Dropblock Uncertainty:
 
-Dependent Dropblock:
-
+#### Dependent Dropblock:
+```
 python unet_code/uncertainty_tests/Dropblock_Uncertainty.py \
                 -model_path (results/base_model/model_info/your_model_ckpt) \
                 -data_path (augmented_data) \
@@ -110,9 +112,9 @@ python unet_code/uncertainty_tests/Dropblock_Uncertainty.py \
                 --gpus 1 \
                 --profiler simple \
                 --detect_anomaly
-
-Independent DropBlock:
-
+```
+#### Independent DropBlock:
+```
 python unet_code/uncertainty_tests/Dropblock_Uncertainty.py \
                 -model_path (results/base_model/model_info/your_model_ckpt) \
                 -data_path (augmented_data) \
@@ -126,11 +128,11 @@ python unet_code/uncertainty_tests/Dropblock_Uncertainty.py \
                 --gpus 1 \
                 --profiler simple \
                 --detect_anomaly
-
+```
 8. Evaluate using Evaluate_Uncertainty.ipynb. There are interactable plots.
 
 9. Run MultiFidelity tests on the Base Model:
-
+```
 python unet_code/multi-fidelity/base_model_mf.py \
                 -model_path (results/base_model/model_info/model-epoch=32-val_loss=0.12.ckpt) \
                 -data_path (augmented_data) \
@@ -143,9 +145,10 @@ python unet_code/multi-fidelity/base_model_mf.py \
                 --detect_anomaly
 
 $1 and $2 represent height and width respectively
+```
 
 10. Train a MultiFidelity Model
-
+```
 python unet_code/multi-fidelity/multi-fidelity-training.py \
                 -mode train \
                 -data_path (augmented_data) \
@@ -171,9 +174,10 @@ python unet_code/multi-fidelity/multi-fidelity-training.py \
 
 test_sizes are the sizes besides the original to test the ability of the model.
 min_size is the smallest size the model could resize to while training (min_size -> original_size (square_padded))
+```
 
 11. Test model if necessary
-
+```
 python unet_code/multi-fidelity/multi-fidelity-training.py \
                 -mode test \
                 -model_path (results/mf_model/model_info/model-epoch=31-val_loss=0.18.ckpt) \
@@ -188,5 +192,5 @@ python unet_code/multi-fidelity/multi-fidelity-training.py \
                 --gradient_clip_val .5 \
                 --profiler simple \
                 --detect_anomaly
-
+```
 
