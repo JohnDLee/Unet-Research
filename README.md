@@ -21,7 +21,10 @@ by 565, manual annotations by individuals trained by an experienced ophthalmolog
 
 ## [Poster](Poster.pdf)
 
-## [Submission]
+## Submission
+
+Submission and other results can be downloaded [here](https://notredame.box.com/s/jpwu5mjrf5ihs606fqky9rzr1mpude4l)
+
 
 ## Running Code
 
