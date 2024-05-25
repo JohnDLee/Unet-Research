@@ -23,7 +23,7 @@ by 565, manual annotations by individuals trained by an experienced ophthalmolog
 
 ## Submission
 
-Submission and other results can be downloaded [here](https://notredame.box.com/s/jpwu5mjrf5ihs606fqky9rzr1mpude4l)
+Submission and other results can be downloaded [here](https://drive.google.com/drive/folders/1NIaop9BfND1XLqT18l1lImxNpL_Iek9K?usp=sharing)
 
 
 ## Running Code
